@@ -32,7 +32,12 @@ group DFSP Notified of Rejection
     NOTIFY_HANDLER -> TOPIC_NOTIFICATIONS: Consume Notification event message \n <color #FF0000><b>Error code:</b> 2001 </color>
     activate TOPIC_NOTIFICATIONS
     deactivate TOPIC_NOTIFICATIONS
-    alt
+        ref over NOTIFY_HANDLER, CSAPI: Event Handler {9.1.0}
+            note right of NOTIFY_HANDLER #lightblue
+                Update Event log upon consuming the notification (still to be designed)
+            end note
+
+        alt
         group Validate Event
             NOTIFY_HANDLER <-> NOTIFY_HANDLER: Validate event - Rule: type == 'notification' && action =='reject' \n <color #FF0000><b>Error code:</b> 2001 </color>
         end
@@ -63,10 +68,11 @@ group DFSP Notified of Rejection
                 }
             }
         end note
-
-        note left of NOTIFY_HANDLER #lightblue
+        ref over NOTIFY_HANDLER, CSAPI: Event Handler {9.1.0}
+            note right of NOTIFY_HANDLER #lightblue
             Log ERROR Messages
-        end note
+            Update Event log upon ERROR notification (still to be designed)
+            end note
     end
 end
 deactivate TOPIC_NOTIFICATIONS
