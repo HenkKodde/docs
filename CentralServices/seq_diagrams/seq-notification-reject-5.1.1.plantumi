@@ -33,9 +33,9 @@ group DFSP Notified of Rejection
     activate TOPIC_NOTIFICATIONS
     deactivate TOPIC_NOTIFICATIONS
         ref over NOTIFY_HANDLER, CSAPI: Event Handler {9.1.0}
-            note right of NOTIFY_HANDLER #lightblue
-                Update Event log upon consuming the notification (still to be designed)
-            end note
+        note right of NOTIFY_HANDLER #lightblue
+            Update Event log upon consuming the notification
+        end note
 
         alt
         group Validate Event
@@ -69,10 +69,10 @@ group DFSP Notified of Rejection
             }
         end note
         ref over NOTIFY_HANDLER, CSAPI: Event Handler {9.1.0}
-            note right of NOTIFY_HANDLER #lightblue
+        note right of NOTIFY_HANDLER #lightblue
             Log ERROR Messages
-            Update Event log upon ERROR notification (still to be designed)
-            end note
+            Update Event log upon ERROR notification
+        end note
     end
 end
 deactivate TOPIC_NOTIFICATIONS
