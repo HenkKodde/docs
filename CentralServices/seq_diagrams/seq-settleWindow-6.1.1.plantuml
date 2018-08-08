@@ -1,0 +1,79 @@
+@startuml
+' declate title
+title 6.1.1. GET:: Settlement Window
+
+autonumber
+
+' Actor Keys:
+
+' declare actors
+
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+control "Settlement Window" as SETTLEWINDOW
+entity "Settlement Window DAO" as SETTLEWINDOW_DAO
+
+boundary "Central Service API" as CSAPI
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLEWINDOW
+    participant SETTLEWINDOW_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant CSAPI
+    participant DB
+end box
+
+' start flow
+
+group Request Settlement Window information
+    OPERATOR -> SETTLEWINDOW: API call for settlement window information
+    note left of SETTLEWINDOW #Yellow
+        Messages
+        GET:: '/settlementWindows/{id}'
+    end note
+
+    activate SETTLEWINDOW
+    alt
+    SETTLEWINDOW -> SETTLEWINDOW_DAO: Request Settlement Window
+    activate SETTLEWINDOW_DAO
+        SETTLEWINDOW_DAO --> DB: Get Settlement Window \n<color #FF0000><b>Error code:</b> 2001</color>
+            activate DB
+            hnote over DB #LightYellow
+                settlementWindowStateId
+                settlementWindow
+            end hnote
+            deactivate DB
+
+    SETTLEWINDOW <- SETTLEWINDOW_DAO: Return Settlement Window
+    deactivate SETTLEWINDOW_DAO
+        note right of SETTLEWINDOW #Yellow
+            Messages
+            {
+                "id": <settlementWindowId>,
+                "reason": <blabla>,
+                "state": <open>,
+                "createdDate": <dateTime>,
+                "changedDate": <>dateTime
+             }
+        end note
+    OPERATOR <- SETTLEWINDOW: Return Results in agreed format
+    else Settlement Window not found
+    SETTLEWINDOW -> SETTLEWINDOW: Update event log
+        note right of SETTLEWINDOW #LightBlue
+            Log ERROR Messages.
+            Update Event log with ERROR.
+            Continue process by opening new settlementWindow.
+        end note
+    SETTLEWINDOW -> OPERATOR: Notification of unsuccessful request
+    end
+end
+@enduml

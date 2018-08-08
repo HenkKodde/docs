@@ -1,0 +1,92 @@
+@startuml
+' declate title
+title 6.1.2. POST:: closeSettlementWindow
+
+autonumber
+
+' Actor Keys:
+
+' declare actors
+
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+control "Settlement Window" as SETTLEWINDOW
+entity "Settlement Window DAO" as SETTLEWINDOW_DAO
+
+boundary "Central Service API" as CSAPI
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLEWINDOW
+    participant SETTLEWINDOW_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant CSAPI
+    participant DB
+end box
+
+' start flow
+
+group Request closure of Settlement Window
+    OPERATOR -> SETTLEWINDOW: API call for settlement window closure
+    note left of SETTLEWINDOW #Yellow
+        Messages
+        POST:: '/settlementWindows/{id}'
+
+        {
+          "state": "closed",
+          "reason": "motivation for closure."
+        }
+    end note
+
+    activate SETTLEWINDOW
+    alt
+    SETTLEWINDOW -> SETTLEWINDOW_DAO: Request settlementWindow status == 'close'
+    activate SETTLEWINDOW_DAO
+        SETTLEWINDOW_DAO --> DB: Update settlementWindow status == 'close' \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+        hnote over DB #LightYellow
+        settlementWindow
+        settlementWindowStateChange
+        end hnote
+    deactivate DB
+    SETTLEWINDOW <- SETTLEWINDOW_DAO: Return success
+    deactivate SETTLEWINDOW_DAO
+
+    SETTLEWINDOW -> SETTLEWINDOW_DAO: Request new settlementWindow && status == 'open'
+    activate SETTLEWINDOW_DAO
+        SETTLEWINDOW_DAO --> DB: Create new settlementWindow status == 'open' \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+        note right of SETTLEWINDOW #Yellow
+        {
+        Messages
+        "state": "open",
+        "reason": "motivation for new Window."
+        }
+        end note
+        hnote over DB #LightYellow
+        settlementWindow
+        settlementWindowStateChange
+        end hnote
+    deactivate DB
+    SETTLEWINDOW <- SETTLEWINDOW_DAO: Return success
+    deactivate SETTLEWINDOW_DAO
+    OPERATOR <- SETTLEWINDOW: Return Success/Results in agreed format
+    else Settlement Window not found
+    SETTLEWINDOW -> SETTLEWINDOW: Update event log
+        note right of SETTLEWINDOW #LightBlue
+        Log ERROR Messages.
+        Update Event log with ERROR.
+        Continue process by opening new settlementWindow.
+        end note
+    OPERATOR <- SETTLEWINDOW: Notification of unsuccessful request
+    end
+end
+@enduml
