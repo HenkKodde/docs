@@ -1,6 +1,6 @@
 @startuml
 ' declate title
-title 6.1.1. GET:: Settlement Window
+title 6.1.1. getSettlementWindowById GET: /settlementWindows
 
 autonumber
 
@@ -12,7 +12,7 @@ actor "Hub Employee" as OPERATOR
 
 boundary "Settlement Service API" as SSAPI
 control "Settlement Window" as SETTLEWINDOW
-entity "Settlement Window DAO" as SETTLEWINDOW_DAO
+entity "Settlement DAO" as SETTLE_DAO
 
 boundary "Central Service API" as CSAPI
 database "Central Store" as DB
@@ -24,7 +24,7 @@ end box
 box "Settlement Service" #LightGreen
     participant SSAPI
     participant SETTLEWINDOW
-    participant SETTLEWINDOW_DAO
+    participant SETTLE_DAO
 end box
 
 box "Central Services" #LightYellow
@@ -34,46 +34,61 @@ end box
 
 ' start flow
 
-group Request Settlement Window information
-    OPERATOR -> SETTLEWINDOW: API call for settlement window information
-    note left of SETTLEWINDOW #Yellow
-        Messages
+group Request Settlement Window properties
+    note right of OPERATOR #Yellow
         GET:: '/settlementWindows/{id}'
     end note
-
+    OPERATOR -> SSAPI: API call Settlement Service to get settlement window detail
+    activate SSAPI
+    SSAPI -> SETTLEWINDOW: Get settlement window
+    deactivate SSAPI
     activate SETTLEWINDOW
     alt
-    SETTLEWINDOW -> SETTLEWINDOW_DAO: Request Settlement Window
-    activate SETTLEWINDOW_DAO
-        SETTLEWINDOW_DAO --> DB: Get Settlement Window \n<color #FF0000><b>Error code:</b> 2001</color>
+        SETTLEWINDOW -> SETTLE_DAO: Get settlementWindow<id> properties
+        activate SETTLE_DAO
+'        group <color #blue>DB TRANSACTION</color>
+                SETTLE_DAO -> DB: Get settlementWindow< properties from DB \n<color #FF0000><b>Error code:</b> 2001</color>
             activate DB
-            hnote over DB #LightYellow
-                settlementWindowStateId
+                hnote over DB #LightYellow
                 settlementWindow
-            end hnote
+                settlementWindowStateChange
+                end hnote
+                SETTLE_DAO <- DB: Return properties for settlementWindow<id>
             deactivate DB
-
-    SETTLEWINDOW <- SETTLEWINDOW_DAO: Return Settlement Window
-    deactivate SETTLEWINDOW_DAO
-        note right of SETTLEWINDOW #Yellow
-            Messages
+'        end
+        SETTLEWINDOW <- SETTLE_DAO: Successful - settlementWindow found
+        SSAPI <- SETTLEWINDOW: Operation successfully completed
+        deactivate SETTLEWINDOW
+        activate SSAPI
+        OPERATOR <- SSAPI: Return results
+        note left of SSAPI #Yellow
             {
-                "id": <settlementWindowId>,
-                "reason": <blabla>,
-                "state": <open>,
-                "createdDate": <dateTime>,
-                "changedDate": <>dateTime
-             }
+              "id": 0,
+              "reason": "string",
+              "state": "string",
+              "createdDate": "string",
+              "changedDate": "string"
+            }
         end note
-    OPERATOR <- SETTLEWINDOW: Return Results in agreed format
-    else Settlement Window not found
-    SETTLEWINDOW -> SETTLEWINDOW: Update event log
-        note right of SETTLEWINDOW #LightBlue
+        deactivate SSAPI
+    else <color #FF0000><b>Settlement Window not found</b></color>
+        SETTLE_DAO -> SSAPI: settlement window not found - Return ERROR
+        deactivate SETTLE_DAO
+        activate SSAPI
+        SSAPI -> SSAPI: Update Event log
+        note right of SSAPI #LightBlue
             Log ERROR Messages.
             Update Event log with ERROR.
-            Continue process by opening new settlementWindow.
         end note
-    SETTLEWINDOW -> OPERATOR: Notification of unsuccessful request
+        OPERATOR <- SSAPI: Return ERROR
+        deactivate SSAPI
+        note left of SSAPI #Yellow
+            {
+              "status": 0,
+              "code": "MISSING_REQUIRED_PARAMETER",
+              "message": "string"
+            }
+        end note
     end
 end
 @enduml
