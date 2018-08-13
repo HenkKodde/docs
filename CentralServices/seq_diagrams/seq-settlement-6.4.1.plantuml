@@ -153,14 +153,14 @@ group Trigger Settlement Event
             Log ERROR Messages.
             Update Event log with ERROR.
             end note
-        OPERATOR <- SSAPI: Return ERROR
         note left of SSAPI #Yellow
             {
               "status": 0,
-              "code": "MISSING_REQUIRED_PARAMETER",
+              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
               "message": "string"
             }
         end note
+        OPERATOR <- SSAPI: Return ERROR
         deactivate SSAPI
     end
 
