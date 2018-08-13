@@ -14,7 +14,6 @@ boundary "Settlement Service API" as SSAPI
 control "Settlement Window" as SETTLEWINDOW
 entity "Settlement DAO" as SETTLE_DAO
 
-boundary "Central Service API" as CSAPI
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -28,7 +27,6 @@ box "Settlement Service" #LightGreen
 end box
 
 box "Central Services" #LightYellow
-    participant CSAPI
     participant DB
 end box
 
@@ -46,7 +44,6 @@ group Request Settlement Window properties
     alt
         SETTLEWINDOW -> SETTLE_DAO: Get settlementWindow<id> properties
         activate SETTLE_DAO
-'        group <color #blue>DB TRANSACTION</color>
                 SETTLE_DAO -> DB: Get settlementWindow< properties from DB \n<color #FF0000><b>Error code:</b> 2001</color>
             activate DB
                 hnote over DB #LightYellow
@@ -55,7 +52,6 @@ group Request Settlement Window properties
                 end hnote
                 SETTLE_DAO <- DB: Return properties for settlementWindow<id>
             deactivate DB
-'        end
         SETTLEWINDOW <- SETTLE_DAO: Successful - settlementWindow found
         SSAPI <- SETTLEWINDOW: Operation successfully completed
         deactivate SETTLEWINDOW

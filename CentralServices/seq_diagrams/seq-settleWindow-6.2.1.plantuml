@@ -14,7 +14,6 @@ boundary "Settlement Service API" as SSAPI
 control "Settlement Window" as SETTLEWINDOW
 entity "Settlement DAO" as SETTLE_DAO
 
-boundary "Central Service API" as CSAPI
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -28,7 +27,6 @@ box "Settlement Service" #LightGreen
 end box
 
 box "Central Services" #LightYellow
-    participant CSAPI
     participant DB
 end box
 
@@ -63,6 +61,9 @@ group Request closure of Settlement Window
                 SETTLE_DAO <--> SETTLE_DAO: Validate settlementWindowStateId == 'OPEN'
             end
                 SETTLE_DAO -> DB: Insert settlementWindowStateId == 'CLOSED'
+                note over DB #Lightpink
+                Lock **settlementWindowStateChange** for read
+                end note
             activate DB
                 hnote over DB #LightYellow
                 settlementWindow
@@ -77,9 +78,11 @@ group Request closure of Settlement Window
                 settlementWindowStateChange
                 end hnote
             deactivate DB
+                note over DB #Lightpink
+                Unlock **settlementWindowStateChange**
+                end note
         end
         SETTLEWINDOW <- SETTLE_DAO: Successful update for settlementWindow to DB
-'        deactivate SETTLE_DAO
     SSAPI <- SETTLEWINDOW: Operation successfully completed
     deactivate SETTLEWINDOW
     activate SSAPI

@@ -12,11 +12,8 @@ actor "Hub Employee" as OPERATOR
 
 boundary "Settlement Service API" as SSAPI
 control "Settlement" as SETTLEMENT
-control "Settlement Window" as SETTLEWINDOW
-control "Participant" as PARTICIPANT
 entity "Settlement DAO" as SETTLE_DAO
 
-boundary "Central Service API" as CSAPI
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -26,13 +23,10 @@ end box
 box "Settlement Service" #LightGreen
     participant SSAPI
     participant SETTLEMENT
-    participant SETTLEWINDOW
-    participant PARTICIPANT
     participant SETTLE_DAO
 end box
 
 box "Central Services" #LightYellow
-    participant CSAPI
     participant DB
 end box
 
