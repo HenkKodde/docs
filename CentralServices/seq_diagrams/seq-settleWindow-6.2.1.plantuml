@@ -5,7 +5,6 @@ title 6.1.2. closeSettlementWindow POST: /settlementWindows
 autonumber
 
 ' Actor Keys:
-
 ' declare actors
 
 actor "Hub Employee" as OPERATOR
