@@ -5,6 +5,7 @@ title 6.2.1. postSettlementEvent POST: /settlementEventTrigger
 autonumber
 
 ' Actor Keys:
+
 ' declare actors
 
 actor "Hub Employee" as OPERATOR
