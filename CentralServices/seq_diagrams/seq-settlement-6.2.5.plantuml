@@ -34,18 +34,23 @@ group Acknowledgement of settlement(s)
     activate OPERATOR
     note right of OPERATOR #Yellow
         {
-          "accounts": [
+        "participants": [
             {
-              "id": 0,
-              "reason": "motivation for closure",
-              "state": "closed."
-            },
-            {
-              "id": 1,
-              "reason": "motivation for closure",
-              "state": "closed."
+            "id": 0
+            "accounts" : [
+                {
+                "id": 0,
+                "reason": "motivation blabla",
+                "state": "SETTLED"
+                },
+                {
+                "id": 0,
+                "reason": "motivation blabla",
+                "state": "SETTLED"
+                }
+            ]
             }
-          ]
+        ]
         }
     end note
     OPERATOR -> SSAPI: PUT - /settlement/{id}
@@ -80,13 +85,20 @@ group Acknowledgement of settlement(s)
         end note
     end
 
+    SETTLE_DAO -> DB: Lookup participant
+    activate DB
+    hnote over DB #LightYellow
+        Tables effected
+    end hnote
+    SETTLE_DAO <-- DB: Return participant detail
+    deactivate DB
     SETTLE_DAO -> DB: Retrieve list of requested account(s) \n<color #FF0000><b>Error code:</b> 2001</color>
     activate DB
     hnote over DB #LightYellow
         settlementParticipantCurrency
         settlementParticipantCurrencyStateChange
     end hnote
-    DB --> SETTLE_DAO: Return list
+    SETTLE_DAO <-- DB: Return list
     deactivate DB
 
     break validate list of account state
@@ -140,7 +152,7 @@ group Acknowledgement of settlement(s)
     deactivate DB
     SETTLEMENT <- SETTLE_DAO: Account settlement update successful
     activate SETTLEMENT
-    SETTLEMENT -> SSAPI: Account settlement update successful
+    SSAPI <- SETTLEMENT: Account settlement update successful
     deactivate SETTLEMENT
     activate SSAPI
     note left of SSAPI #LightYellow
