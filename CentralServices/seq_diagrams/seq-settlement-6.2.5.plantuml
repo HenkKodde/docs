@@ -1,0 +1,211 @@
+@startuml
+' declate title
+title 6.2.5. updateSettlementById PUT: /updateSettlementById
+autonumber
+
+' Actor Keys:
+
+' declare actors
+
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+control "Settlement" as SETTLEMENT
+entity "Settlement DAO" as SETTLE_DAO
+
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLEMENT
+    participant SETTLE_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant DB
+end box
+
+' start flow
+group Acknowledgement of settlement(s)
+    activate OPERATOR
+    note right of OPERATOR #Yellow
+        {
+          "accounts": [
+            {
+              "id": 0,
+              "reason": "motivation for closure",
+              "state": "closed."
+            },
+            {
+              "id": 1,
+              "reason": "motivation for closure",
+              "state": "closed."
+            }
+          ]
+        }
+    end note
+    OPERATOR -> SSAPI: PUT - /settlement/{id}
+    deactivate OPERATOR
+    activate SSAPI
+    SSAPI -> SETTLEMENT: Update settlement
+    deactivate SSAPI
+    activate SETTLEMENT
+    SETTLEMENT -> SETTLE_DAO: Update settlement
+    deactivate SETTLEMENT
+    activate SETTLE_DAO
+    SETTLE_DAO -> DB: Lookup settlement and state \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        settlement
+        settlementStateChange
+    end hnote
+    SETTLE_DAO <-- DB: Return Settlement
+    deactivate DB
+
+    break Verify settlement state
+        group Validate event
+            SETTLE_DAO <-> SETTLE_DAO:  Validate event - Rule: settlementState == 'PENDING_SETTLEMENT' \n<color #FF0000><b>Error code:</b> 2001</color>
+            note right of SETTLE_DAO #lightgray
+                **Condition**: Continue if true, otherwise set ERROR response code == '401' break
+            end note
+        end
+        note left of SETTLE_DAO #Red
+            **Validation failure**
+            goto
+            **Process ERROR**
+        end note
+    end
+
+    SETTLE_DAO -> DB: Retrieve list of requested account(s) \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        settlementParticipantCurrency
+        settlementParticipantCurrencyStateChange
+    end hnote
+    DB --> SETTLE_DAO: Return list
+    deactivate DB
+
+    break validate list of account state
+        group Validate event
+            note right of SETTLE_DAO #LightGray
+                validList = true
+            end note
+            SETTLE_DAO <-> SETTLE_DAO: Validate event - Rule: validList == 'true' \n<color #FF0000><b>Error code:</b> 2001</color>
+            loop
+                SETTLE_DAO <-> SETTLE_DAO: if participantCurrencyState != 'PENDING_SETTLEMENT' \nthen validList = false \n<color #FF0000><b>Error code:</b> 2001</color>
+            end loop
+            note right of SETTLE_DAO #LightGray
+                **Condition**: Continue if validList = true, otherwise set ERROR response code == '401' break
+            end note
+        end
+        note left of SETTLE_DAO #Red
+            **Validation failure**
+            goto
+            **Process ERROR**
+        end note
+    end
+
+    group <color #blue>DB TRANSACTION</color>
+        SETTLE_DAO -> DB: Update participant account state \n<color #FF0000><b>Error code:</b> 2001</color>
+        hnote over DB #LightYellow
+            INSERT INTO **settlementParticipantCurrencyStateChange**
+            SELECT settlementParticipantCurrencyId, payload.state, payload.reason
+            FROM settlementParticipantCurrency
+            WHERE settlementId = payload.settlementId
+        end hnote
+    end
+
+    SETTLE_DAO -> DB: Obtain list of Participants and settlementWindows \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        SELECT pc.participantId 
+        FROM settlementParticipantCurrency AS spc 
+        JOIN participantCurrency AS pc ON
+            pc.participantCurrencyId = spc.participantCurrencyId 
+        WHERE spc.settlementId = payload.settlement<id> 
+            AND pc.participantCurrencyId = payload.account<id>
+        GROUP BY participantCurrency.participantId
+    end hnote
+    note over DB #LightGray
+        Response back for the account(s) updated to include
+        settlementWindowId, settlementWindowState, settlementWindowState,settlementWindowCreatedDate
+        participantId,
+        account<id>(participantCurrencyId), reason, state, netAmount, currency
+    end note
+    SETTLE_DAO <-- DB: Return updated list of account(s)
+    deactivate DB
+    SETTLEMENT <- SETTLE_DAO: Account settlement update successful
+    activate SETTLEMENT
+    SETTLEMENT -> SSAPI: Account settlement update successful
+    deactivate SETTLEMENT
+    activate SSAPI
+    note left of SSAPI #LightYellow
+        [
+          {
+            "Id": 0,
+            "State": "string",
+            "settlementWindows": [
+              [
+                {
+                  "id": 0,
+                  "reason": "string",
+                  "state": "string",
+                  "createdDate": "string",
+                }
+              ]
+            ],
+            "Participants": [
+              {
+                "id": 0,
+                "accounts": [
+                  {
+                    "id": "string",
+                    "reason": "string",
+                    "state": "SETTLED",
+                    "netSettlementAmount": {
+                      "amount": 0,
+                      "currency": "string"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+    end note
+    SSAPI -> OPERATOR: Account settlement update successful
+    deactivate SSAPI
+
+    else <color #FF0000><b>Error Process</b></color>
+    note left of SETTLE_DAO #Red
+
+        **Process ERROR**
+
+    end note
+    SETTLEMENT <- SETTLE_DAO: Return - ERROR
+    deactivate SETTLE_DAO
+    activate SETTLEMENT
+    SSAPI <- SETTLEMENT: Return - ERROR
+    deactivate SETTLEMENT
+    activate SSAPI
+    SSAPI <-> SSAPI: Update Event log
+    note right of SSAPI #LightBlue
+        Log ERROR Messages.
+        Update Event log with ERROR.
+    end note
+    note left of SSAPI #Yellow
+        {
+          "status": 0,
+          "code": "(ERROR response code eg. '404'
+                    Defined in swagger definition))",
+          "message": "string"
+        }
+    end note
+    OPERATOR <- SSAPI: Return ERROR
+    deactivate SSAPI
+end
+@enduml

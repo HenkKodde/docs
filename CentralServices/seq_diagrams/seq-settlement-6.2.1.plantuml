@@ -1,0 +1,187 @@
+@startuml
+' declate title
+title 6.2.1. postSettlementEvent POST: /settlementEventTrigger
+
+autonumber
+
+' Actor Keys:
+
+' declare actors
+
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+control "Settlement" as SETTLEMENT
+entity "Settlement DAO" as SETTLE_DAO
+
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLEMENT
+    participant SETTLE_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant DB
+end box
+
+' start flow
+
+group Trigger Settlement Event
+    note right of OPERATOR #Yellow
+        settlementEventPayload
+        {
+          "settlementId": 0,
+          "reason": "string",
+          "settlementWindows": [
+            {
+              "id": 1,
+            },
+            {
+              "id": 2,
+            }
+          ]
+        }
+    end note
+    note right of OPERATOR #LightGray
+        verify if we need the rest of the Swagger messages?
+    end note
+    OPERATOR -> SSAPI: API call Settlement Service to request a settlement event
+    activate SSAPI
+    SSAPI-> SETTLEMENT: Create new settlement
+    deactivate SSAPI
+    activate SETTLEMENT
+    SETTLEMENT -> SETTLE_DAO: Initiate new settlement
+    deactivate SETTLEMENT
+    activate SETTLE_DAO
+
+    SETTLE_DAO -> DB: Insert new settlement \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        settlement
+    end hnote
+    deactivate DB
+    deactivate SETTLEMENT
+    SETTLE_DAO -> DB: Get settlementWindow(s) from DB \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        settlementWindow
+        settlementWindowStateChange
+    end hnote
+    deactivate DB
+    group Validate the list of settlement windows
+        note right of SETTLE_DAO #LightGray
+            allSettlementWindowsClosed = true
+        end note
+        loop
+            SETTLE_DAO <-> SETTLE_DAO: if settlementWindowStateId != 'CLOSED' \nthen allSettlementWindowsClosed = false
+        end loop
+    end
+    alt allSettlementWindowsClosed == true
+        group <color #blue>DB TRANSACTION</color>
+            SETTLE_DAO -> DB: Insert the list of settlementWindows
+            hnote over DB #LightYellow
+                settlementSettlementWindow
+            end hnote
+            SETTLE_DAO -> DB: Populate settlementTransferParticipant with aggregated data
+            hnote over DB #LightYellow
+                INSERT INTO **settlementTransferParticipant**
+                SELECT payload.settlementId AS settlementId, tp.participantCurrencyId, tp.participantRoleTypeId,
+                    tp.ledgerEntryTypeId, SUM(tp.amount) AS amount
+                FROM **transferFulfilment** AS tf
+                JOIN **transferStateChange** AS tsc
+                ON tsc.transferId = tf.transferId AND tsc.transferStateId = 'COMMITED'
+                JOIN **transferParticipant** AS tp
+                ON tp.transferId = tf.transferId
+                WHERE tf.settlementWindowId IN (
+                    SELECT settlementWindowId
+                    FROM **settlementSettelementWindow**
+                    WHERE settlementId = payload.settlementId)
+                GROUP BY tp.participantCurrencyId, tp.participantRoleTypeId, tp.ledgerEntryTypeId
+            end hnote
+
+            SETTLE_DAO -> DB: Insert netAmount per participantCurrency
+            hnote over DB #LightYellow
+                INSERT INTO **settlementParticipantCurrency**
+                SELECT settlementId, participantCurrencyId,
+                    SUM(CASE WHEN 'PAYER_DFSP', 'PRINCIPLE_VALUE' THEN amount
+                             WHEN 'PAYEE_DFSP', 'PRINCIPLE_VALUE' THEN -amount
+                             WHEN 'INTERCHANGE_FEE' THEN -amount)
+                FROM settlementTransferParticipant
+                WHERE settlementId = payload.settlementId
+                GROUP BY settlementId, participantCurrencyId
+            end hnote
+
+            SETTLE_DAO -> DB: Insert initial state change 'NOT_SETTLED'
+            hnote over DB #LightYellow
+                INSERT INTO **settlementParticipantCurrencyStateChange**
+                SELECT settlementParticipantCurrencyId, 'NOT_SETTLED', payload.reason
+                FROM settlementParticipantCurrency
+                WHERE settlementId = payload.settlementId
+            end hnote
+
+            SETTLE_DAO -> DB: Insert initial state for settlement 'NOT_SETTLED'
+            hnote over DB #LightYellow
+                INSERT INTO **settlementStateChange**
+                SELECT settlementId, 'NOT_SETTLED', payload.reason
+                FROM settlementParticipantCurrency
+                WHERE settlementId = payload.settlementId
+            end hnote
+
+            SETTLE_DAO -> DB: Insert new state for settlementWindow 'PENDING_SETTLEMENT'
+            hnote over DB #LightYellow
+                INSERT INTO **settlementWindowStateChange**
+                SELECT settlementId, 'PENDING_SETTLEMENT', payload.reason
+                FROM settlementParticipantCurrency
+                WHERE settlementId = payload.settlementId
+            end hnote
+        end
+
+    else allSettlementWindowsClosed == false
+        SETTLE_DAO -> SETTLEMENT: settlementWindows not closed - Return ERROR
+        activate SETTLEMENT
+        SETTLEMENT -> SSAPI: Return ERROR
+        deactivate SETTLEMENT
+        activate SSAPI
+        SSAPI <-> SSAPI: Update Event log
+        note right of SSAPI #LightBlue
+            Log ERROR Messages.
+            Update Event log with ERROR.
+            end note
+        note left of SSAPI #Yellow
+            {
+              "status": 0,
+              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
+              "message": "string"
+            }
+        end note
+        OPERATOR <- SSAPI: Return ERROR
+        deactivate SSAPI
+    end
+
+    SETTLEMENT <- SETTLE_DAO: Results for participant netAmount per ledger for closed settlement window
+    deactivate SETTLE_DAO
+    activate SETTLEMENT
+    SETTLEMENT -> SSAPI: Results for participant netAmount per ledger for settlement window
+    note left of SSAPI #Yellow
+        {
+          "id": "string",
+          "reason": "string",
+          "state": "PENDING_SETTLEMENT",
+          "netSettlementAmount": {
+            "amount": 0,
+            "currency": "string"
+          }
+        }
+    end note
+    deactivate SETTLEMENT
+    activate SSAPI
+    SSAPI -> OPERATOR: Results for participant netAmount per ledger for closed settlement window
+    deactivate SSAPI
+end
+@enduml
