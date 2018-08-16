@@ -9,60 +9,67 @@ boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
 database "Central Store" as DB
 
-box "Central HUB" #LightPink
+box "Central HUB" #lightpink
     participant OPERATOR
 end box
 
-box "Settlement Service" #LightGreen
+box "Settlement Service" #lightgreen
     participant SSAPI
     participant SETTLE_DAO
 end box
 
-box "Central Services" #LightYellow
+box "Central Services" #lightyellow
     participant DB
 end box
 
 ' start flow
 group Acknowledgement of Settlement Transfer
     activate OPERATOR
-    note right of OPERATOR #Yellow
+    note right of OPERATOR #yellow
         {
             "participants": [
                 {
-                    "participantId": 1
+                    "id": 1
                     "accounts" : [
                         {
-                            "participantCurrencyId": 1,
+                            "id": 1,
                             "reason": "string",
-                            <color #FF0000>"state": "SETTLED"</color>
+                            "state": "PENDING_SETTLEMENT"
                         },
                         {
-                            "participantCurrencyId": 2,
+                            "id": 2,
                             "reason": "string",
-                            <color #FF0000>"state": "SETTLED"</color>
+                            "state": "SETTLED"
                         }
                     ]
                 },
                 {
-                    "participantId": 2
+                    "id": 2
                     "accounts" : [
                         {
-                            "participantCurrencyId": 3,
+                            "id": 3,
                             "reason": "string",
-                            <color #FF0000>"state": "SETTLED"</color>
+                            "state": "NOT_SETTLED"
                         }
                     ]
                 }
             ]
         }
     end note
+    
+    note right of OPERATOR #lightgray
+        In the sequence below we refer to:
+        - participants[N].id AS participantId
+        - accounts[N].id AS participantCurrencyId
+    end note
+
     OPERATOR -> SSAPI: PUT - /settlement/{id}
     activate SSAPI
     SSAPI -> SETTLE_DAO: Lookup settlement
     activate SETTLE_DAO
     SETTLE_DAO -> DB: Lookup settlement and settlement state\n<color #FF0000><b>Error code:</b> 2001</color>
     activate DB
-    hnote over DB #LightYellow
+    hnote over DB #lightyellow
         settlement
         settlementStateChange
     end hnote
@@ -74,11 +81,11 @@ group Acknowledgement of Settlement Transfer
     alt settlementStateChange == 'PENDING_SETTLEMENT'
         SSAPI -> SSAPI: Create **participantIdList** from request
 
-        SSAPI -> SETTLE_DAO: Select all currencies for participantIdList
+        SSAPI -> SETTLE_DAO: Retrive participant details and state for participantIdList
         activate SETTLE_DAO
         SETTLE_DAO -> DB: Select from DB\n<color #FF0000><b>Error code:</b> 2001</color>
         activate DB
-        hnote over DB #LightYellow
+        hnote over DB #lightyellow
             SELECT pc.participantId, spc.participantCurrencyId, spcsc.settlementStateId, 
                 spc.settlementParticipantCurrencyId, spc.netAmount, pc.currencyId
             FROM **participantCurrency** pc
@@ -136,7 +143,7 @@ group Acknowledgement of Settlement Transfer
                 activate SETTLE_DAO
                 SETTLE_DAO -> DB: Insert new state 'SETTLED' and record.reason\n<color #FF0000><b>Error code:</b> 2001</color>
                 activate DB
-                hnote over DB #LightYellow
+                hnote over DB #lightyellow
                     settlementParticipantCurrencyStateChange
                 end hnote
                 deactivate DB
@@ -148,7 +155,7 @@ group Acknowledgement of Settlement Transfer
         activate SETTLE_DAO
         SETTLE_DAO -> DB: Retrive list\n<color #FF0000><b>Error code:</b> 2001</color>
         activate DB
-        hnote over DB #LightYellow
+        hnote over DB #lightyellow
             SELECT ssw.settlementWindowId, tp.participantCurrencyId
             FROM **settlementSettlementWindow** ssw
             JOIN **transferFulfilment** tf
@@ -163,11 +170,11 @@ group Acknowledgement of Settlement Transfer
         SSAPI <-- SETTLE_DAO: Return **settlementWindowsParticipantCurrencyList**
         deactivate SETTLE_DAO
 
-        SSAPI -> SETTLE_DAO: Get list of NOT SETTLED participantCurrencies in settlement
+        SSAPI -> SETTLE_DAO: Get list of all NOT_SETTELED or PENDING_SETTLEMENT\nparticipantCurrencies in settlement
         activate SETTLE_DAO
         SETTLE_DAO -> DB: Retrive list\n<color #FF0000><b>Error code:</b> 2001</color>
         activate DB
-        hnote over DB #LightYellow
+        hnote over DB #lightyellow
             SELECT spc.participantCurrencyId
             FROM **settlementParticipantCurrency** spc
             JOIN (SELECT spc.settlementParticipantCurrencyId, 
@@ -209,7 +216,7 @@ group Acknowledgement of Settlement Transfer
                     activate SETTLE_DAO
                     SETTLE_DAO -> DB: Insert new state 'SETTLED'\n<color #FF0000><b>Error code:</b> 2001</color>
                     activate DB
-                    hnote over DB #LightYellow
+                    hnote over DB #lightyellow
                         settlementWindowStateChange
                     end hnote
                     deactivate DB
@@ -230,7 +237,7 @@ group Acknowledgement of Settlement Transfer
         |||
     end
 
-    note left of SSAPI #LightYellow
+    note left of SSAPI #lightyellow
         [
           {
             "id": 0,
@@ -250,12 +257,25 @@ group Acknowledgement of Settlement Transfer
                 "id": 0,
                 "accounts": [
                   {
-                    "id": "string",
+                    "id": 1,
                     "reason": "string",
                     "state": "SETTLED",
                     "netSettlementAmount": {
                       "amount": 0,
                       "currency": "string"
+                    }
+                  },
+                  {
+                    "id": 2,
+                    "reason": "string",
+                    "state": "SETTLED",
+                    "netSettlementAmount": {
+                      "amount": 0,
+                      "currency": "string"
+                    },
+                    "errorInformation": {
+                      "errorCode": 8001,
+                      "errorDescription": "string"
                     }
                   }
                 ]

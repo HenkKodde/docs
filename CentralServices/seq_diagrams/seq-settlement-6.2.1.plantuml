@@ -117,18 +117,18 @@ group Trigger Settlement Event
                 GROUP BY settlementId, participantCurrencyId
             end hnote
 
-            SETTLE_DAO -> DB: Insert initial state change 'NOT_SETTLED'
+            SETTLE_DAO -> DB: Insert initial state change 'PENDING_SETTLEMENT'
             hnote over DB #LightYellow
                 INSERT INTO **settlementParticipantCurrencyStateChange**
-                SELECT settlementParticipantCurrencyId, 'NOT_SETTLED', payload.reason
+                SELECT settlementParticipantCurrencyId, 'PENDING_SETTLEMENT', payload.reason
                 FROM settlementParticipantCurrency
                 WHERE settlementId = payload.settlementId
             end hnote
 
-            SETTLE_DAO -> DB: Insert initial state for settlement 'NOT_SETTLED'
+            SETTLE_DAO -> DB: Insert initial state for settlement 'PENDING_SETTLEMENT'
             hnote over DB #LightYellow
                 INSERT INTO **settlementStateChange**
-                SELECT settlementId, 'NOT_SETTLED', payload.reason
+                SELECT settlementId, 'PENDING_SETTLEMENT', payload.reason
                 FROM settlementParticipantCurrency
                 WHERE settlementId = payload.settlementId
             end hnote
