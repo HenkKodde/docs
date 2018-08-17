@@ -33,13 +33,13 @@ group Acknowledgement of Settlement Transfer
                     "accounts" : [
                         {
                             "id": 1,
-                            "reason": "string",
-                            "state": "PENDING_SETTLEMENT"
+                            "state": "PENDING_SETTLEMENT",
+                            "reason": <string>
                         },
                         {
                             "id": 2,
-                            "reason": "string",
-                            "state": "SETTLED"
+                            "state": "SETTLED",
+                            "reason": <string>
                         }
                     ]
                 },
@@ -48,8 +48,8 @@ group Acknowledgement of Settlement Transfer
                     "accounts" : [
                         {
                             "id": 3,
-                            "reason": "string",
-                            "state": "NOT_SETTLED"
+                            "state": "NOT_SETTLED",
+                            "reason": <string>
                         }
                     ]
                 }
@@ -58,61 +58,284 @@ group Acknowledgement of Settlement Transfer
     end note
     
     note right of OPERATOR #lightgray
-        In the sequence below we refer to:
-        - participants[N].id AS participantId
-        - accounts[N].id AS participantCurrencyId
+        In the sequence diagram below:
+        **participantId** is participants[N].id
+        **participantCurrencyId** is accounts[N].id
     end note
 
     OPERATOR -> SSAPI: PUT - /settlement/{id}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Lookup settlement
+    SSAPI -> SETTLE_DAO: Retrive full information for settlement\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    SETTLE_DAO -> DB: Lookup settlement and settlement state\n<color #FF0000><b>Error code:</b> 2001</color>
+    SETTLE_DAO -> DB: Select from DB
     activate DB
     hnote over DB #lightyellow
-        settlement
-        settlementStateChange
+        SELECT s.settlementId, ssc.settlementStateId, ssc.reason, ssc.createdDate
+        FROM **settlement** s
+        LEFT JOIN **settlementStateChange** ssc
+        ON ssc.settlementId = s.settlementId
+        AND ssc.settelementStateChangeId = (
+            SELECT MAX(ssc1.settelementStateChangeId)
+            FROM **settlementStateChange** ssc1
+            WHERE ssc1.settlementId = {id})
+        WHERE s.settlementId = {id}
     end hnote
     SETTLE_DAO <-- DB: Return data
     deactivate DB
-    SSAPI <-- SETTLE_DAO: Return data
+    SSAPI <-- SETTLE_DAO: Return **settlementData**
     deactivate SETTLE_DAO
 
     alt settlementStateChange == 'PENDING_SETTLEMENT'
-        SSAPI -> SSAPI: Create **participantIdList** from request
-
-        SSAPI -> SETTLE_DAO: Retrive participant details and state for participantIdList
+        SSAPI -> SETTLE_DAO: Retrive full information for settlement accounts\n<color #FF0000><b>Error code:</b> 2001</color>
         activate SETTLE_DAO
-        SETTLE_DAO -> DB: Select from DB\n<color #FF0000><b>Error code:</b> 2001</color>
+        SETTLE_DAO -> DB: Select from DB
         activate DB
         hnote over DB #lightyellow
-            SELECT pc.participantId, spc.participantCurrencyId, spcsc.settlementStateId, 
-                spc.settlementParticipantCurrencyId, spc.netAmount, pc.currencyId
-            FROM **participantCurrency** pc
-            JOIN **settlementParticipantCurrency** spc
-            ON spc.participantCurrencyId = pc.participantCurrencyId
-            JOIN (SELECT spc.settlementParticipantCurrencyId, 
-                        MAX(settlementParticipantCurrencyStateChangeId) AS
-                        maxSettlementParticipantCurrencyStateChangeId
-                FROM **settlementParticipantCurrencyStateChange** spcsc
-                JOIN **settlementParticipantCurrency** spc
-                ON spc.settlementParticipantCurrencyId = spcsc.settlementParticipantCurrencyId
-                JOIN **participantCurrency** pc
-                ON pc.participantCurrencyId = spc.participantCurrencyId
-                WHERE spc.settlementId = {id}
-                AND pc.participantId IN {participantIdList}) AS mx
-            ON mx.settlementParticipantCurrencyId = spc.settlementParticipantCurrencyId
+            SELECT pc.participantId, spc.participantCurrencyId, spcsc.settlementStateId, spcsc.reason,
+                   spcsc.createdDate, spc.netAmount, pc.currencyId, spc.settlementParticipantCurrencyId AS <color #0000FF>key</color>
+            FROM **settlementParticipantCurrency** spc
+            JOIN (SELECT spcsc1.settlementParticipantCurrencyId, 
+                         MAX(spcsc1.settlementParticipantCurrencyStateChangeId) AS
+                         maxSettlementParticipantCurrencyStateChangeId
+                  FROM **settlementParticipantCurrency** spc1
+                  JOIN **settlementParticipantCurrencyStateChange** spcsc1
+                  ON spcsc1.settlementParticipantCurrencyId = spc1.settlementParticipantCurrencyId
+                  WHERE spc1.settlementId = {id}
+                  GROUP BY spcsc1.settlementParticipantCurrencyId) spcs
             JOIN **settlementParticipantCurrencyStateChange** spcsc
-            ON spcsc.settlementParticipantCurrencyStateChangeId = 
-               mx.maxSettlementParticipantCurrencyStateChangeId
+            ON spcsc.settlementParticipantCurrencyStateChangeId =
+               spcs.maxSettlementParticipantCurrencyStateChangeId
+            JOIN **participantCurrency** pc
+            ON pc.participantCurrencyId = spc.participantCurrencyId
             WHERE spc.settlementId = {id}
-            AND pc.participantId IN {participantIdList}
         end hnote
         SETTLE_DAO <-- DB: Return data
         deactivate DB
-        SSAPI <-- SETTLE_DAO: Return spcStateChangeList
+        SSAPI <-- SETTLE_DAO: Return **settlementAccountsList**
         deactivate SETTLE_DAO
 
+        SSAPI -> SETTLE_DAO: Retrive full information for settlement windows\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
+        SETTLE_DAO -> DB: Select from DB
+        activate DB
+        hnote over DB #lightyellow
+            SELECT ssw.settlementWindowId, sswsc.settlementWindowStateId, sswsc.reason, sswsc.createdDate
+            FROM **settlementSettlementWindow** ssw
+            JOIN (SELECT sswsc1.settlementWindowId, MAX(sswsc1.settlementWindowStateChangeId) AS
+                         maxSettlementWindowStateChangeId
+                  FROM **settlementSettlementWindowStateChange** sswsc1
+                  WHERE sswsc1.settlementWindowId IN (
+                      SELECT ssw1.settlementWindowId
+                      FROM **settlementSettlementWindow** ssw1
+                      WHERE ssw1.settlementId = {id})
+                  GROUP BY sswsc1.settlementWindowId) ssws
+            ON ssws.settlementWindowId = ssw.settlementWindowId
+            JOIN **settlementSettlementWindowStateChange** sswsc
+            ON sswsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
+            WHERE ssw.settlementId = {id}
+        end hnote
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        SSAPI <-- SETTLE_DAO: Return **windowsList**
+        deactivate SETTLE_DAO
+
+        SSAPI -> SETTLE_DAO: Retrive full information for settlement windows accounts\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
+        SETTLE_DAO -> DB: Select from DB
+        activate DB
+        hnote over DB #lightyellow
+            SELECT ssw.settlementWindowId, tp.participantCurrencyId
+            FROM **settlementSettlementWindow** ssw
+            JOIN **transferFulfilment** tf
+            ON tf.settlementWindowId = ssw.settlementWindowId
+            JOIN **transferParticipant** tp
+            ON tp.transferId = tf.transferId
+            WHERE settlementId = {id}
+            GROUP BY ssw.settlementWindowId, tp.participantCurrencyId
+        end hnote
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        SSAPI <-- SETTLE_DAO: Return **windowsAccountsList**
+        deactivate SETTLE_DAO
+
+        note right of SSAPI #lightgray
+            Available raw datasets from DB:
+            **settlementData** contains information about settlement and its current state/reason
+            **settlementAccountsList** holds information about all accounts and their current state/reason
+            **windowsList** has information about all windows and their current state/reason
+            **windowsAccountsList** has information about all accounts and windows
+
+            Local variables and objects:
+            **settlementAccounts**: { // (derived from <color 0000FF>settlementAccountsList</color>)
+                pendingSettlementAccounts: [], // array of accounts in PENDING_SETTLEMENT state
+                settledAccounts: [], // array of accounts in SETTLED state
+                notSettledAccounts: [] // array of accounts in NOT_SETTLED state
+            }
+            **allParticipantsInit**: { // same as participants response object with initial data & key (derived from <color 0000FF>settlementAccountsList</color>)
+                participantId_key: { // number used to access the object in array-like style
+                    id: participantId,
+                    accounts: {
+                        participantCurrencyId_key: { // number used to access the object in array-like style
+                            id: participantCurrencyId,
+                            state: settlementStateId,
+                            reason: reason,
+                            createdDate: createdDate,
+                            netSettlementAmount: {
+                                amount: netAmount,
+                                currency: currencyId
+                            },
+                            key: <color 0000FF>key</color> // will be used to insert new state for settlementParticipantCurrency
+                        }
+                    }
+                }
+            }
+            **allAccountsInit**: { // same as previous, but without participant id
+                participantCurrencyId_key: { // number used to access the object in array-like style
+                    id: participantCurrencyId,
+                    state: settlementStateId,
+                    reason: reason,
+                    createdDate: createdDate,
+                    netSettlementAmount: {
+                        amount: netAmount,
+                        currency: currencyId
+                    },
+                    key: <color 0000FF>key</color> // will be used to insert new state for settlementParticipantCurrency
+                }
+            }
+            **allWindowsInit** { // same as settlementWindows response object with initial data (derived from <color 0000FF>windowsList</color>)
+                settlementWindowId_key: { // number used to access the object in array-like style
+                    id: settlementWindowId, // same as key value
+                    state: settlementWindowStateId, 
+                    reason: reason, 
+                    createdDate: createdDate
+                }
+            }
+            **windowsAccounts**: {
+                settlementWindowId_key: { // number used to access the object in array-like style
+                    id: settlementWindowId // same as key value
+                    pendingSettlementAccounts: [], // array of accounts in PENDING_SETTLEMENT state
+                    settledAccounts: [], // array of accounts in SETTLED state
+                    notSettledAccounts: [] // array of accounts in NOT_SETTLED state
+                }
+            }
+            **accountsWindows**: {
+                participantCurrencyId_key: { // number used to access the object in array-like style
+                    id: participantCurrencyId, // same as key value
+                    windows: [] // array of windows to which the account settlement spans
+                }
+            }
+            let **transactionTimestamp** = now()
+        end note
+        |||
+        SSAPI -> SSAPI: <color FF0000>Acquire DB lock</color> on settlementParticipantCurrencyStateChange,\nsettlementWindowStateChange and settlementStateChange
+        note right of SSAPI #lightgray
+            let settlementAccounts = {
+                pendingSettlementAccounts: [],
+                settledAccounts: [],
+                notSettledAccounts: [],
+            }
+            let allParticipantsInit = {} // declare sparse array
+            let allAccountsInit = {} // declare sparse array
+            let pid // participantId
+            let aid // accountId = participantCurrencyId
+            let state
+        end note
+        loop settlementAccountsList as record
+            note right of SSAPI #lightgray
+                pid = record.participantId
+                aid = record.participantCurrencyId
+                state = record.settlementStateId
+
+                allAccountsInit[aid] = {
+                    id: aid,
+                    state,
+                    reason: record.reason,
+                    createDate: record.createdDate,
+                    netSettlementAmount: {
+                        amount: record.netAmount,
+                        currency: record.currencyId
+                    },
+                    key
+                }
+                allParticipantsInit[pid] = allParticipantsInit[pid] ? allParticipantsInit[pid] : {id: pid, accounts: {}}
+                allParticipantsInit[pid].accounts[aid] = allAccountsInit[aid]
+            end note
+            alt state == 'PENDING_SETTLEMENT'
+                note right of SSAPI #lightgray
+                    settlementAccounts.pendingSettlementAccounts.push(aid)
+                end note
+            else state == 'SETTLED'
+                note right of SSAPI #lightgray
+                    settlementAccounts.settledAccounts.push(aid)
+                end note
+            else state == 'NOT_SETTLED'
+                note right of SSAPI #lightgray
+                    settlementAccounts.notSettledAccounts.push(aid)
+                end note
+            end
+        end 
+        |||
+        note right of SSAPI #lightgray
+            let allWindowsInit = {} // declare sparse array
+            let wid // settlementWindowId
+        end note
+        loop windowsList as record
+            note right of SSAPI #lightgray
+                wid = record.settlementWindowId
+                state = record.settlementWindowStateId
+
+                allWindowsInit[wid] = {
+                    id: wid,
+                    state,
+                    reason: record.reason,
+                    createDate: record.createdDate
+                }
+            end note
+        end 
+        |||
+        note right of SSAPI #lightgray
+            let windowsAccounts = {} // declare sparse array
+            let accountsWindows = {} // declare sparse array
+        end note
+        loop windowsAccountsList as record
+            note right of SSAPI #lightgray
+                wid = record.settlementWindowId
+                aid = record.participantCurrencyId
+                state = allAccountsInit[aid]
+
+                accountsWindows[aid] = accountsWindows[aid] ? accountsWindows[aid] : {
+                    id: aid,
+                    windows: []
+                }
+                accountsWindows[aid].windows.push(wid)
+
+                windowsAccounts[wid] = windowsAccounts[wid] ? windowsAccounts[wid] : {
+                    id: wid, 
+                    pendingSettlementAccounts: [],
+                    settledAccounts: [],
+                    notSettledAccounts: []
+                }
+            end note
+            alt state == 'PENDING_SETTLEMENT'
+                note right of SSAPI #lightgray
+                    windowsAccounts[wid].pendingSettlementAccounts.push(aid)
+                end note
+            else state == 'SETTLED'
+                note right of SSAPI #lightgray
+                    windowsAccounts[wid].settledAccounts.push(aid)
+                end note
+            else state == 'NOT_SETTLED'
+                note right of SSAPI #lightgray
+                    windowsAccounts[wid].notSettledAccounts.push(aid)
+                end note
+            end
+        end 
+        |||
+
+
+        |||
+        |||
+        |||
         SSAPI -> SSAPI: participantList = []\nsettlementParticipantCurrencyIdList = []
         loop payload.participants as participant
             SSAPI -> SSAPI: participantList.push({participantId: participant.participantId, accounts: []})
@@ -151,24 +374,7 @@ group Acknowledgement of Settlement Transfer
             end
         end
 
-        SSAPI -> SETTLE_DAO: Get list of settlementWindows and participantCurrencies
-        activate SETTLE_DAO
-        SETTLE_DAO -> DB: Retrive list\n<color #FF0000><b>Error code:</b> 2001</color>
-        activate DB
-        hnote over DB #lightyellow
-            SELECT ssw.settlementWindowId, tp.participantCurrencyId
-            FROM **settlementSettlementWindow** ssw
-            JOIN **transferFulfilment** tf
-            ON tf.settlementWindowId = ssw.settlementWindowId
-            JOIN **transferParticipant** tp
-            ON tp.transferId = tf.transferId
-            WHERE settlementId = {id}
-            GROUP BY ssw.settlementWindowId, tp.participantCurrencyId
-        end hnote
-        SETTLE_DAO <-- DB: Return list
-        deactivate DB
-        SSAPI <-- SETTLE_DAO: Return **settlementWindowsParticipantCurrencyList**
-        deactivate SETTLE_DAO
+
 
         SSAPI -> SETTLE_DAO: Get list of all NOT_SETTELED or PENDING_SETTLEMENT\nparticipantCurrencies in settlement
         activate SETTLE_DAO
@@ -241,14 +447,15 @@ group Acknowledgement of Settlement Transfer
         [
           {
             "id": 0,
-            "state": "string",
+            "state": <enum>,
+            "createdDate": <date>,
             "settlementWindows": [
               [
                 {
                   "id": 0,
-                  "reason": "string",
-                  "state": "string",
-                  "createdDate": "string",
+                  "state": <enum>,
+                  "reason": <string>,
+                  "createdDate": <date>
                 }
               ]
             ],
@@ -258,24 +465,26 @@ group Acknowledgement of Settlement Transfer
                 "accounts": [
                   {
                     "id": 1,
-                    "reason": "string",
                     "state": "SETTLED",
+                    "reason": <string>,
+                    "createdDate": <date>,
                     "netSettlementAmount": {
                       "amount": 0,
-                      "currency": "string"
+                      "currency": <enum>
                     }
                   },
                   {
                     "id": 2,
-                    "reason": "string",
                     "state": "SETTLED",
+                    "reason": <string>,
+                    "createdDate": <date>,
                     "netSettlementAmount": {
                       "amount": 0,
-                      "currency": "string"
+                      "currency": <enum>
                     },
                     "errorInformation": {
                       "errorCode": 8001,
-                      "errorDescription": "string"
+                      "errorDescription": <string>
                     }
                   }
                 ]
