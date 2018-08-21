@@ -167,11 +167,11 @@ group Acknowledgement of Settlement Transfer
 
             Local variables and objects:
             **settlementAccounts**: { // (derived from <color 0000FF>settlementAccountsList</color>)
-                pendingSettlementAccounts: [], // array of accounts in PENDING_SETTLEMENT state
-                settledAccounts: [], // array of accounts in SETTLED state
-                notSettledAccounts: [] // array of accounts in NOT_SETTLED state
+                pendingSettlementCount: <integer>, // count of accounts in PENDING_SETTLEMENT state
+                settledCount: <integer>, // count of accounts in SETTLED state
+                notSettledCount: <integer> // count of accounts in NOT_SETTLED state
             }
-            **allParticipantsInit**: { // same as participants response object with initial data & key (derived from <color 0000FF>settlementAccountsList</color>)
+            **allParticipants**: { // same as participants response object with initial data & key (derived from <color 0000FF>settlementAccountsList</color>)
                 participantId_key: { // number used to access the object in array-like style
                     id: participantId,
                     accounts: {
@@ -183,13 +183,12 @@ group Acknowledgement of Settlement Transfer
                             netSettlementAmount: {
                                 amount: netAmount,
                                 currency: currencyId
-                            },
-                            key: <color 0000FF>key</color> // will be used to insert new state for settlementParticipantCurrency
+                            }
                         }
                     }
                 }
             }
-            **allAccountsInit**: { // same as previous, but without participant id
+            **allAccounts**: { // same as previous but accessed by account id (derived from <color 0000FF>settlementAccountsList</color>)
                 participantCurrencyId_key: { // number used to access the object in array-like style
                     id: participantCurrencyId,
                     state: settlementStateId,
@@ -199,10 +198,11 @@ group Acknowledgement of Settlement Transfer
                         amount: netAmount,
                         currency: currencyId
                     },
+                    participantId: participantId, // could be used to reconstruct allParticipants
                     key: <color 0000FF>key</color> // will be used to insert new state for settlementParticipantCurrency
                 }
             }
-            **allWindowsInit** { // same as settlementWindows response object with initial data (derived from <color 0000FF>windowsList</color>)
+            **allWindows**: { // same as settlementWindows response object with initial data (derived from <color 0000FF>windowsList</color>)
                 settlementWindowId_key: { // number used to access the object in array-like style
                     id: settlementWindowId, // same as key value
                     state: settlementWindowStateId, 
@@ -230,14 +230,14 @@ group Acknowledgement of Settlement Transfer
         SSAPI -> SSAPI: <color FF0000>Acquire DB lock</color> on settlementParticipantCurrencyStateChange,\nsettlementWindowStateChange and settlementStateChange
         note right of SSAPI #lightgray
             let settlementAccounts = {
-                pendingSettlementAccounts: [],
-                settledAccounts: [],
-                notSettledAccounts: [],
+                pendingSettlementAccounts: 0,
+                settledAccounts: 0,
+                notSettledAccounts: 0,
             }
-            let allParticipantsInit = {} // declare sparse array
-            let allAccountsInit = {} // declare sparse array
+            let allParticipants = {} // declare sparse array
+            let allAccounts = {} // declare sparse array
             let pid // participantId
-            let aid // accountId = participantCurrencyId
+            let aid // accountId (participantCurrencyId)
             let state
         end note
         loop settlementAccountsList as record
@@ -246,7 +246,7 @@ group Acknowledgement of Settlement Transfer
                 aid = record.participantCurrencyId
                 state = record.settlementStateId
 
-                allAccountsInit[aid] = {
+                allAccounts[aid] = {
                     id: aid,
                     state,
                     reason: record.reason,
@@ -257,26 +257,26 @@ group Acknowledgement of Settlement Transfer
                     },
                     key
                 }
-                allParticipantsInit[pid] = allParticipantsInit[pid] ? allParticipantsInit[pid] : {id: pid, accounts: {}}
-                allParticipantsInit[pid].accounts[aid] = allAccountsInit[aid]
+                allParticipants[pid] = allParticipants[pid] ? allParticipants[pid] : {id: pid, accounts: {}}
+                allParticipants[pid].accounts[aid] = allAccounts[aid]
             end note
             alt state == 'PENDING_SETTLEMENT'
                 note right of SSAPI #lightgray
-                    settlementAccounts.pendingSettlementAccounts.push(aid)
+                    settlementAccounts.pendingSettlementCount++
                 end note
             else state == 'SETTLED'
                 note right of SSAPI #lightgray
-                    settlementAccounts.settledAccounts.push(aid)
+                    settlementAccounts.settledCount++
                 end note
             else state == 'NOT_SETTLED'
                 note right of SSAPI #lightgray
-                    settlementAccounts.notSettledAccounts.push(aid)
+                    settlementAccounts.notSettledCount++
                 end note
             end
         end 
         |||
         note right of SSAPI #lightgray
-            let allWindowsInit = {} // declare sparse array
+            let allWindows = {} // declare sparse array
             let wid // settlementWindowId
         end note
         loop windowsList as record
@@ -284,7 +284,7 @@ group Acknowledgement of Settlement Transfer
                 wid = record.settlementWindowId
                 state = record.settlementWindowStateId
 
-                allWindowsInit[wid] = {
+                allWindows[wid] = {
                     id: wid,
                     state,
                     reason: record.reason,
@@ -301,7 +301,7 @@ group Acknowledgement of Settlement Transfer
             note right of SSAPI #lightgray
                 wid = record.settlementWindowId
                 aid = record.participantCurrencyId
-                state = allAccountsInit[aid]
+                state = allAccounts[aid]
 
                 accountsWindows[aid] = accountsWindows[aid] ? accountsWindows[aid] : {
                     id: aid,
@@ -331,15 +331,206 @@ group Acknowledgement of Settlement Transfer
             end
         end 
         |||
+        note right of SSAPI #lightgray
+            Available objects after the setup:
+            **settlementAccounts** is used for tracing settlement state and state transition allowance
+            **allParticipants** is used for tracing participant/account state and state transition
+            **allAccounts** is helper object, same as previous, providing direct access to account by id
+            **allWindows** has window information for all windows in the settlement
+            **windowsAccounts** is used for tracing settlement window state and state transition allowance
+            **accountsWindows** is helper object to show the list of windows to which settlement account spans
+
+            Now we are ready to process the **payload**:
+            **participants** = [] // part of the response object that lists the affected participants and respective accounts
+            **affectedWindows** = [] // array of the affected windows
+            **settlementParticipantCurrencyStateChange** = [] // array to collect inserts to the table
+            **processedAccounts** = [] // array to log processed accounts and restrict subsequent processing
+            let **pi** // declare participant index
+            let **ai** // declare account index
+            let **participant** -- declare pointer to current participant in the //response object//
+            let **participantPayload** -- declare pointer to current participant in the //payload object//
+            let **accountPayload** -- declare pointer to current account in the //payload object//
+        end note
+        |||
+        loop let p IN payload.participants
+            note right of SSAPI #lightgray
+                participantPayload = payload.participants[p]
+                participants.push({id: participantPayload.id, accounts: []})
+                pi = participants.length - 1
+                participant = participants[pi]
+            end note
+            loop let a IN participantPayload.accounts
+                note right of SSAPI #lightgray
+                    accountPayload = participantPayload.accounts[a]
+                end note
+                alt allAccounts[accountPayload.id] == undefined
+                    note right of SSAPI #lightgray
+                        participant.accounts.push({
+                            id: accountPayload.id,
+                            errorInformation: {
+                                errorCode: <integer>,
+                                errorDescription: 'Account not found'
+                            }
+                        })
+                    end note
+                else processedAccounts.indexOf(accountPayload.id)
+                    note right of SSAPI #lightgray
+                        participant.accounts.push({
+                            id: accountPayload.id,
+                            errorInformation: {
+                                errorCode: <integer>,
+                                errorDescription: 'Account already processed once'
+                            }
+                        })
+                    end note
+                else allAccounts[account.id].state == 'PENDING_SETTLEMENT'
+                    alt accountPayload.state == 'PENDING_SETTLEMENT' // allowed
+                        note right of SSAPI #lightgray
+                            processedAccounts.push(accountPayload.id)
+                            participant.accounts.push({
+                                id: accountPayload.id,
+                                state: accountPayload.state,
+                                reason: accountPayload.reason,
+                                createdDate: transactionTimestamp,
+                                netSettlementAmount: allAccounts[accountPayload.id].netSettlementAmount
+                            })
+                            settlementParticipantCurrencyStateChange.push({
+                                settlementParticipantCurrencyId: allAccounts[accountPayload.id].key,
+                                settlementStateId: accountPayload.state,
+                                reason: accountPayload.reason
+                            })
+                        end note
+                    else accountPayload.state == 'SETTLED' // allowed
+                        note right of SSAPI #lightgray
+                            processedAccounts.push(accountPayload.id)
+                            participant.accounts.push({
+                                id: accountPayload.id,
+                                state: accountPayload.state,
+                                reason: accountPayload.reason,
+                                createdDate: transactionTimestamp,
+                                netSettlementAmount: allAccounts[accountPayload.id].netSettlementAmount
+                            })
+                            settlementParticipantCurrencyStateChange.push({
+                                settlementParticipantCurrencyId: allAccounts[accountPayload.id].key,
+                                settlementStateId: accountPayload.state,
+                                reason: accountPayload.reason
+                            })
+                            settlementAccounts.pendingSettlementCount--
+                            settlementAccounts.settledCount++
+                            allAccounts[accountPayload.id].state = accountPayload.state
+                            allAccounts[accountPayload.id].reason = accountPayload.reason
+                            allAccounts[accountPayload.id].createdDate = currentTimestamp
+                            //allParticipants[participantPayload.id].accounts[accountPayload.id].state = accountPayload.state//
+                            //allParticipants[participantPayload.id].accounts[accountPayload.id].reason = accountPayload.reason//
+                            //allParticipants[participantPayload.id].accounts[accountPayload.id].createdDate = currentTimestamp//
+                            let settlementWindowId
+                        end note
+                        loop let aw IN accountsWindows[accountPayload.id].windows
+                            note right of SSAPI #lightgray
+                                settlementWindowId = accountsWindows[accountPayload.id].windows[aw]
+                                _.remove(windowsAccounts[settlementWindowId].pendingSettlementAccounts, (value) => {
+                                    value == accountPayload.id
+                                }
+                                windowsAccounts[settlementWindowId].settledAccounts.push(accountPayload.id)
+
+                                if (affectedWindows.indexOf(settlementWindowId) < 0) {
+                                    affectedWindows.push(settlementWindowId)
+                                }
+                            end note
+                        end
+                    else accountPayload.state == 'NOT_SETTLED' // conditional
+                        note right of SSAPI #lightgray
+                            let settlementWindowId
+                            let windowAccount
+                            let isAllowed = true
+                        end note
+                        loop let aw IN accountsWindows[accountPayload.id].windows
+                            note right of SSAPI #lightgray
+                                settlementWindowId = accountsWindows[accountPayload.id].windows[aw]
+                                if (windowsAccounts[settlementWindowId].settledCount) > 0 {
+                                    isAllowed = false
+                                }
+                            end note
+                        end
+                        alt isAllowed == false
+                            note right of SSAPI #lightgray
+                                processedAccounts.push(accountPayload.id)
+                                participant.accounts.push({
+                                    id: accountPayload.id,
+                                    errorInformation: {
+                                        errorCode: <integer>,
+                                        errorDescription: 'NOT_SETTLED can not be set when there is a settled account within a window'
+                                    }
+                                })
+                            end note
+                        else isAllowed == true
+                            loop let aw IN accountsWindows[accountPayload.id].windows
+                                note right of SSAPI #lightgray
+                                    settlementWindowId = accountsWindows[accountPayload.id].windows[aw]
+                                end note
+                                loop let wa IN windowsAccounts[settlementWindowId].pendingSettlementAccounts
+                                    note right of SSAPI #lightgray
+                                        windowAccount = windowsAccounts[settlementWindowId].pendingSettlementAccounts[wa]
+                                        processedAccounts.push(windowAccount)
+                                    end note
+                                    opt participants[allAccounts[windowAccount].participantId] == undefined
+                                        note right of SSAPI #lightgray
+                                            participants[allAccounts[windowAccount].participantId] = {
+                                                id: allAccounts[windowAccount].participantId,
+                                                accounts: []
+                                            }
+                                        end note
+                                    end
+                                    note right of SSAPI #lightgray
+                                        participant = participants[allAccounts[windowAccount].participantId]
+                                    end note
+                                    opt participant.accounts[windowAccount] != undefined
+                                        note right of SSAPI #lightgray
+                                            _.remove(participant.accounts[windowAccount], (value) => {
+                                                value == participant.accounts[windowAccount]
+                                            }
+                                        end note
+                                    end
+                                    note right of SSAPI #lightgray
+                                        participant.accounts.push({
+                                            id: windowAccount,
+                                            state: accountPayload.state,
+                                            reason: accountPayload.reason,
+                                            createdDate: transactionTimestamp,
+                                            netSettlementAmount: allAccounts[windowAccount].netSettlementAmount
+                                        })
+                                        settlementParticipantCurrencyStateChange.push({
+                                            settlementParticipantCurrencyId: allAccounts[windowAccount].key,
+                                            settlementStateId: accountPayload.state,
+                                            reason: accountPayload.reason
+                                        })
+                                        settlementAccounts.pendingSettlementCount--
+                                        settlementAccounts.notSettledCount++
+                                        allAccounts[windowAccount].state = accountPayload.state
+                                        allAccounts[windowAccount].reason = accountPayload.reason
+                                        allAccounts[windowAccount].createdDate = currentTimestamp
+                                        //allParticipants[allAccounts[windowAccount].participantId].accounts[windowAccount].state = accountPayload.state//
+                                        //allParticipants[allAccounts[windowAccount].participantId].accounts[windowAccount].reason = accountPayload.reason//
+                                        //allParticipants[allAccounts[windowAccount].participantId].accounts[windowAccount].createdDate = currentTimestamp//
+                                    end note
+                                end
+                            end
+                        end
+                    end
+                end
+                note right of SSAPI #lightgray
+                    
+                end note
 
 
-        |||
-        |||
-        |||
-        SSAPI -> SSAPI: participantList = []\nsettlementParticipantCurrencyIdList = []
-        loop payload.participants as participant
-            SSAPI -> SSAPI: participantList.push({participantId: participant.participantId, accounts: []})
-            loop participant.accounts as account
+
+
+
+
+
+                |||
+                |||
+                |||
                 SSAPI -> SSAPI: accountIsFound = false
                 loop spcStateChangeList as record
                     alt participant.participantId == record.participantId\nand account.participantCurrencyId == record.participantCurrencyId
