@@ -42,120 +42,121 @@ group Request Settlement Details
 
     OPERATOR -> SSAPI: GET - /settlement/{id}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Retrieve full settlement details\n<color #FF0000><b>Error code:</b> 2001</color>
+    SSAPI -> SETTLE_DAO: Retrieve settlement details\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
 
     SETTLE_DAO -> DB: Select settlement from DB
     activate DB
     hnote over DB #LightYellow
-        SELECT s.settlementId, ssc.settlementStateId, ssc.reason, ssc.createdDate
-        FROM **settlement** AS s
-        LEFT JOIN **settlementStateChange** AS ssc
-        ON ssc.settlementId = s.settlementId
-        AND ssc.settelementStateChangeId = (
-            SELECT MAX(ssc1.settelementStateChangeId)
-            FROM **settlementStateChange** AS ssc1
-            WHERE ssc1.settlementId = {id})
-        WHERE s.settlementId = {id}
+        SELECT FROM
+        **settlement**
+            settlementId
+        **settlementSettlementChange**
+            settlementStateId
     end hnote
 
         SETTLE_DAO <-- DB: Return data
         deactivate DB
         note left of SETTLE_DAO #LightGray
             **settlementData**
-            Contains information about settlement and its current state/reason
+            Contains information about settlement
+            -state
         end note
         SSAPI <-- SETTLE_DAO: Return **settlementData**
         deactivate SETTLE_DAO
     alt settlement found
-        SSAPI -> SETTLE_DAO: Retrieve full information for settlement accounts\n<color #FF0000><b>Error code:</b> 2001</color>
-        activate SETTLE_DAO
-        SETTLE_DAO -> DB: Select from DB
-        activate DB
-        hnote over DB #LightYellow
-            SELECT pc.participantId, spc.participantCurrencyId, spcsc.settlementStateId, spcsc.reason,
-                spcsc.createdDate, spc.netAmount, pc.currencyId, spc.settlementParticipantCurrencyId
-            FROM **settlementParticipantCurrency** AS spc
-            JOIN (SELECT spcsc1.settlementParticipantCurrencyId,
-                    MAX(spcsc1.settlementParticipantCurrencyStateChangeId) AS
-                    maxSettlementParticipantCurrencyStateChangeId
-                FROM **settlementParticipantCurrency** AS spc1
-                JOIN **settlementParticipantCurrencyStateChange** AS spcsc1
-                ON spcsc1.settlementParticipantCurrencyId = spc1.settlementParticipantCurrencyId
-                WHERE spc1.settlementId = {id}
-                GROUP BY spcsc1.settlementParticipantCurrencyId) spcs
-            JOIN **settlementParticipantCurrencyStateChange** AS spcsc
-            ON spcsc.settlementParticipantCurrencyStateChangeId =
-                spcs.maxSettlementParticipantCurrencyStateChangeId
-            JOIN **participantCurrency** AS pc
-            ON pc.participantCurrencyId = spc.participantCurrencyId
-            WHERE spc.settlementId = {id}
-        end hnote
-        SETTLE_DAO <-- DB: Return data
-        deactivate DB
-        note left of SETTLE_DAO #LightGray
-            **settlementAccountsList**
-            Holds information about all accounts and their current state/reason
-        end note
-        SSAPI <-- SETTLE_DAO: Return **settlementAccountsList**
-        deactivate SETTLE_DAO
 
         SSAPI -> SETTLE_DAO: Retrieve full information for settlement windows\n<color #FF0000><b>Error code:</b> 2001</color>
         activate SETTLE_DAO
         SETTLE_DAO -> DB: Select from DB
         activate DB
         hnote over DB #LightYellow
-            SELECT ssw.settlementWindowId, sswsc.settlementWindowStateId, sswsc.reason, sswsc.createdDate
-            FROM **settlementSettlementWindow** AS ssw
-            JOIN (SELECT sswsc1.settlementWindowId, MAX(sswsc1.settlementWindowStateChangeId) AS
-                        maxSettlementWindowStateChangeId
-                    FROM **settlementSettlementWindowStateChange** AS sswsc1
-                   WHERE sswsc1.settlementWindowId IN (
-                        SELECT ssw1.settlementWindowId
-                    FROM **settlementSettlementWindow** AS ssw1
-                    WHERE ssw1.settlementId = {id})
-                GROUP BY sswsc1.settlementWindowId) ssws
-            ON ssws.settlementWindowId = ssw.settlementWindowId
-            JOIN **settlementSettlementWindowStateChange** AS sswsc
-            ON sswsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
-            WHERE ssw.settlementId = {id}
+            **settlementSettlementWindow**
+                settlementId
+                settlementWindowId
+            **settlementWindow**
+                createdDate
+            **settlementWindowStateChange**
+                reason
+                createdDate (changedDate)
+
         end hnote
         SETTLE_DAO <-- DB: Return data
         deactivate DB
         note left of SETTLE_DAO #LightGray
             **windowsList**
-            Has information about all windows and their current state/reason
+            Contains about settlement windows in settlement
+            -settlementWindowId
+            -reason
+            -state
+            -createdDate
+            -changedDate
         end note
         SSAPI <-- SETTLE_DAO: Return **windowsList**
         deactivate SETTLE_DAO
 
-        SSAPI -> SETTLE_DAO: Retrieve full information for settlement windows accounts\n<color #FF0000><b>Error code:</b> 2001</color>
+        SSAPI -> SETTLE_DAO: Retrieve information for settlement accounts\n<color #FF0000><b>Error code:</b> 2001</color>
         activate SETTLE_DAO
         SETTLE_DAO -> DB: Select from DB
         activate DB
         hnote over DB #LightYellow
-            SELECT ssw.settlementWindowId, tp.participantCurrencyId
-            FROM **settlementSettlementWindow** AS ssw
-            JOIN **transferFulfilment** AS tf
-            ON tf.settlementWindowId = ssw.settlementWindowId
-            JOIN **transferParticipant** AS tp
-            ON tp.transferId = tf.transferId
-            WHERE settlementId = {id}
-            GROUP BY ssw.settlementWindowId, tp.participantCurrencyId
+            SELECT FROM
+            **transferFulfilment**
+                transferid
+                settlementWindowId
+            **transferParticipant**
+                transferId
+                participantCurrencyId
+            **participantCurrency**
+                participantCurrencyId
+                participantId
+                currencyId
+            **settlementParticipantCurrency**
+                settlementId - ?
+                participantCurrencyId
+                netAmount
+            **settlementSettlementCurrencyStateChange**
+                settlementStateId
+                reason
+
         end hnote
         SETTLE_DAO <-- DB: Return data
         deactivate DB
         note left of SETTLE_DAO #LightGray
-            **windowsAccountsList**
-            Has information about all accounts and windows
+            **settlementAccountsList**
+            Holds information about all accounts in settlement
+            -settlementWindowId
+                -participantId
+                    -participantCurrencyId (account)
+                    -reason
+                    -state
+                    -amount (netAmount)
+                    -currencyId
         end note
-        SSAPI <-- SETTLE_DAO: Return **windowsAccountsList**
+        SSAPI <-- SETTLE_DAO: Return **settlementAccountsList**
         deactivate SETTLE_DAO
 
         note right of SSAPI #Pink
         **Design still in progress**
 
+        settlementId = /settlement/{id}
+        loop
+            settlementWindowId = &settlementWindowId
+            createdDate >= &fromDateTime
+            createdDate <= &toDateTime
+            loop
+                participantId = &participantId
+                loop
+                    participantCurrencyId = &account
+                    currencyId = &currency
+                    state = &state
+                end
+            end
+        end
+
+
         Apply filters to datalist(s) from DB
+
         Format reply messages
         end note
 

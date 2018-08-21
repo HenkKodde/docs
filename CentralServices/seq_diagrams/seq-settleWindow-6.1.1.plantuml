@@ -35,21 +35,27 @@ group Request Settlement Window properties
     activate SETTLE_DAO
     SETTLE_DAO -> DB: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
     activate DB
-    hnote over DB #LightYellow
+    note over DB #LightYellow
         **settlementWindow**
             createDate
         **settlementWindowStateChange**
             state
             reason
             changeDate
-'        SELECT MAX(settlementWindowStateId) as currentstate
-'        FROM **settlementWindowStateChange**
-'        WHERE (settlementWindowId = {id})
-'        GROUP BY settlementWindowStateId
-
-'        SELECT settlementWindowId, settlementWindowStateId, reason, createDate
-'        FROM **settlementWindowStateChange**
-'        WHERE (settlementWindowStateId = {currentstate});
+    end note
+    hnote over DB #LightYellow
+        SELECT sw.settlementWindowId, swsc.reason, swsc.settlementWindowStateId,
+                sw.createdDate, swsc.createdDate as changedDate
+        FROM settlementWindow AS sw
+            JOIN (SELECT swsc.settlementWindowId,
+                    MAX(swsc.settlementWindowStateChangeId) AS maxSettlementWindowStateChangeId
+                FROM settlementWindowStateChange AS swsc
+                WHERE swsc.settlementWindowId
+                GROUP BY swsc.settlementWindowId) ssws
+            ON ssws.settlementWindowId = sw.settlementWindowId
+        JOIN settlementWindowStateChange AS swsc
+        ON swsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
+        WHERE sw.settlementWindowId = /settlementWindow/{id};
     end hnote
     SETTLE_DAO <-- DB: Return results
     deactivate DB

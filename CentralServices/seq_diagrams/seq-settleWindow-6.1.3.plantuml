@@ -44,25 +44,31 @@ group Retrieve SettlementWindow properties per parameters.
     SETTLE_DAO -> DB: Request settlementWindow \n<color #FF0000><b>Error code:</b> 2001</color>
     activate DB
     hnote over DB #LightYellow
-        participantCurrency
-        transferParticipant
-        transferFulfilment
         settlementWindow
         settlementWindowStateChange
+        transferFulfilment
+        transferParticipant
+        participantCurrency
+
     end hnote
     note over DB #LightGray
         NOTES for constructing database query
 
-        (participantId) {&participantId={id}}
-        participantCurrency -> (participantCurencyId)
-        transferParticipant -> (transferId)
-        transferFulfilment  -> **(settlementWindowId)**
+        settlementWindow -> **(createdDate)**
+            **Optional Filter**
+            {createdDate <= &fromDateTime & createdDate >= &toDateTime}
 
-        settlementWindow -> **(createDate)**
-            {createDate <= &fromDateTime & createDate >= &toDateTime}
+        settlementWindowStateChange -> (use settlementWindowId to **settlementWindowStateId** & **createdDate** & **reason**)
+        NOTE - settlementWindowStateChange.createdDate = **changedDate**
+            **Filter on &state** (note valid is 'OPEN' 'CLOSE' as per Swagger definition)
+            (state) = {&state={state}}
 
-        settlementWindowStateChange -> **(settlementWindowStateId & createDate)**
-            NOTE - settlementWindowStateChange.createDate = **changeDate**
+        **transferFulfilment**  -> (use settlementWindowId = {id} to get transferId)
+        **transferParticipant** -> (use transferId = transferId to get participantCurrencyId)
+        **participantCurrency** -> (use participantCurrencyId to get participantId)
+            **Filter on &participantId**
+        (participantId) = {&participantId={id}}
+
     end note
     SETTLE_DAO <-- DB: Return result
     deactivate DB

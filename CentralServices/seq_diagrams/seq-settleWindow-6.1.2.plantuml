@@ -43,15 +43,25 @@ group Request closure of Settlement Window
         group <color #blue>DB TRANSACTION</color>
             SETTLE_DAO -> DB: Get state for settlementWindow from DB \n<color #FF0000><b>Error code:</b> 2001</color>
             activate DB
-            hnote over DB #LightYellow
+            note over DB #LightYellow
                 GET
                 **settlementWindowStateChange**
                     settlementWindowId = {id}
                     state
-'                SELECT MAX(settlementWindowStateChangeId), settlementWindowStateId
-'                FROM **settlementWindowStateChange**
-'                WHERE settlementWindowId = {id}
-'                GROUP BY settlementWindowId, settlementWindowStateId;
+            end note
+            hnote over DB #LightYellow
+                SELECT sw.settlementWindowId, swsc.settlementWindowStateId
+                FROM settlementWindow AS sw
+                    JOIN (SELECT swsc.settlementWindowId,
+                            MAX(swsc.settlementWindowStateChangeId)
+                                AS maxSettlementWindowStateChangeId
+                        FROM settlementWindowStateChange AS swsc
+                        WHERE swsc.settlementWindowId
+                        GROUP BY swsc.settlementWindowId) ssws
+                    ON ssws.settlementWindowId = sw.settlementWindowId
+                JOIN settlementWindowStateChange AS swsc
+                ON swsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
+                WHERE sw.settlementWindowId = /settlementWindow/{id};
             end hnote
             deactivate DB
             group Validate window state
@@ -68,9 +78,11 @@ group Request closure of Settlement Window
                 settlementWindowId = {id}
                 state
                 reason
-'                INSERT INTO settlementWindowStateChange
-'                    (settlementWindowId, settlementWindowStateId, reason)
-'                    VALUE ({id}, {state}, {reason});
+            end hnote
+            hnote over DB #LightYellow
+                INSERT INTO settlementWindowStateChange
+                    (settlementWindowId, settlementWindowStateId, reason)
+                    VALUE (payload./settlementWindow/{id}, payload.state, paylaod.reason);
             end hnote
             deactivate DB
             SETTLE_DAO -> DB: Create new settlementWindow \n state == 'open'\n reason == 'motivation for new Window' \n<color #FF0000><b>Error code:</b> 2001</color>
@@ -92,18 +104,23 @@ group Request closure of Settlement Window
                     reason
 
                 GET
+                **settlementWindow**
+                    {new id}    "id"
+                    createdDate "createdDate"
                 **settlementWindowStateChange**
                     {new id}
-                    state   "state"
                     reason  "reason"
-                    createdDate "changeDate"
+                    state   "state"
+                    createdDate "changedDate"
+
 '                INSERT INTO **settlementWindow**
 '                    (reason)
-'                    VALUE ({reason});
+'                    VALUE (payload.reason);
 '
 '                SELECT MAX(settlementWindowId) AS nsw
 '                FROM **settlementWindow**
-'                    GROUP BY settlementWindowId
+'                GROUP BY settlementWindowId
+'                ORDER BY settlementWindowId DESC LIMIT 1;
 '
 '                INSERT INTO **settlementWindowStateChange**
 '                    (settlementWindowId, settlementWindowStateId, reason)
