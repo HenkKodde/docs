@@ -1,0 +1,105 @@
+@startuml
+' declate title
+title Request settlementWindow by parameters.
+'6.1.3. getSettlementWindowByParams GET: /settlementWindows
+
+autonumber
+' declare actors
+
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+entity "Settlement DAO" as SETTLE_DAO
+
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLE_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant DB
+end box
+
+' start flow
+
+group Retrieve SettlementWindow properties per parameters.
+    activate OPERATOR
+    note right of OPERATOR #Yellow
+        **Filtering Params:**
+        &participantId={id}
+        &state={state}
+        &fromDateTime={yyyy-mm-ddThh:mm}
+        &toDateTime={yyyy-mm-ddThh:mm}
+    end note
+    OPERATOR -> SSAPI: GET - /settlementWindows/{params}
+    activate SSAPI
+    SSAPI -> SETTLE_DAO: Request settlementWindow
+    activate SETTLE_DAO
+    SETTLE_DAO -> DB: Request settlementWindow \n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        participantCurrency
+        transferParticipant
+        transferFulfilment
+        settlementWindow
+        settlementWindowStateChange
+    end hnote
+    note over DB #LightGray
+        NOTES for constructing database query
+
+        (participantId) {&participantId={id}}
+        participantCurrency -> (participantCurencyId)
+        transferParticipant -> (transferId)
+        transferFulfilment  -> **(settlementWindowId)**
+
+        settlementWindow -> **(createDate)**
+            {createDate <= &fromDateTime & createDate >= &toDateTime}
+
+        settlementWindowStateChange -> **(settlementWindowStateId & createDate)**
+            NOTE - settlementWindowStateChange.createDate = **changeDate**
+    end note
+    SETTLE_DAO <-- DB: Return result
+    deactivate DB
+    alt Return settlementWindow(s)
+        SSAPI <-- SETTLE_DAO: Successful - return results
+        note left of SSAPI #Yellow
+          [
+            {
+              "id": 0,
+              "reason": "string",
+              "state": "string",
+              "createdDate": "string",
+              "changedDate": "string"
+            }
+          ]
+        end note
+        OPERATOR <-- SSAPI: Return results
+        deactivate SSAPI
+    else <color #FF0000><b>settlementWindow not found</b></color>
+        SSAPI <-- SETTLE_DAO: Unsuccessful result - return ERROR
+        deactivate SETTLE_DAO
+        activate SSAPI
+        SSAPI -> SSAPI: Update Event log
+        note right of SSAPI #LightBlue
+            Log ERROR Messages.
+            Update Event log with ERROR.
+        end note
+        note left of SSAPI #Yellow
+            {
+              "status": 0,
+              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
+              "message": "string"
+            }
+        end note
+        OPERATOR <-- SSAPI: Return ERROR
+        deactivate SSAPI
+    deactivate OPERATOR
+    end
+end
+@enduml

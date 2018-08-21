@@ -1,16 +1,14 @@
 @startuml
 ' declate title
-title 6.1.1. getSettlementWindowById GET: /settlementWindows
+title Returns a Settlement Window as per id
+'title 6.1.1. getSettlementWindowById GET: /settlementWindows
 
 autonumber
 
-' Actor Keys:
 ' declare actors
-
 actor "Hub Employee" as OPERATOR
 
 boundary "Settlement Service API" as SSAPI
-control "Settlement Window" as SETTLEWINDOW
 entity "Settlement DAO" as SETTLE_DAO
 
 database "Central Store" as DB
@@ -21,7 +19,6 @@ end box
 
 box "Settlement Service" #LightGreen
     participant SSAPI
-    participant SETTLEWINDOW
     participant SETTLE_DAO
 end box
 
@@ -30,45 +27,48 @@ box "Central Services" #LightYellow
 end box
 
 ' start flow
-
 group Request Settlement Window properties
-    note right of OPERATOR #Yellow
-        GET:: '/settlementWindows/{id}'
-    end note
-    OPERATOR -> SSAPI: API call Settlement Service to get settlement window detail
+    activate OPERATOR
+    OPERATOR -> SSAPI: GET - /settlementWindows/{id}
     activate SSAPI
-    SSAPI -> SETTLEWINDOW: Get settlement window
-    deactivate SSAPI
-    activate SETTLEWINDOW
-        SETTLEWINDOW -> SETTLE_DAO: Get settlementWindow<id> properties
-        activate SETTLE_DAO
-                SETTLE_DAO -> DB: Get settlementWindow< properties from DB \n<color #FF0000><b>Error code:</b> 2001</color>
-            activate DB
-                hnote over DB #LightYellow
-                settlementWindow
-                settlementWindowStateChange
-                end hnote
-                SETTLE_DAO <- DB: Return properties for settlementWindow<id>
-            deactivate DB
-    alt Settlement Window properties
-        SETTLEWINDOW <- SETTLE_DAO: Successful - settlementWindow found
-        SSAPI <- SETTLEWINDOW: Operation successfully completed
-        deactivate SETTLEWINDOW
-        activate SSAPI
+    SSAPI -> SETTLE_DAO: Request settlementWindow
+    activate SETTLE_DAO
+    SETTLE_DAO -> DB: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
+    activate DB
+    hnote over DB #LightYellow
+        **settlementWindow**
+            createDate
+        **settlementWindowStateChange**
+            state
+            reason
+            changeDate
+'        SELECT MAX(settlementWindowStateId) as currentstate
+'        FROM **settlementWindowStateChange**
+'        WHERE (settlementWindowId = {id})
+'        GROUP BY settlementWindowStateId
+
+'        SELECT settlementWindowId, settlementWindowStateId, reason, createDate
+'        FROM **settlementWindowStateChange**
+'        WHERE (settlementWindowStateId = {currentstate});
+    end hnote
+    SETTLE_DAO <-- DB: Return results
+    deactivate DB
+    alt settlementWindow found
+        SSAPI <-- SETTLE_DAO: Operation successfully completed
         note left of SSAPI #Yellow
             {
               "id": 0,
               "reason": "string",
               "state": "string",
-              "createdDate": "string"            }
+              "createdDate": "string",
+              "changedDate": "string"
+            }
         end note
-        OPERATOR <- SSAPI: Return results
-        deactivate SSAPI
+        OPERATOR <-- SSAPI: Return results
     else <color #FF0000><b>Settlement Window not found</b></color>
-        SETTLE_DAO -> SSAPI: settlement window not found - Return ERROR
+        SETTLE_DAO --> SSAPI: settlement window not found - Return ERROR
         deactivate SETTLE_DAO
-        activate SSAPI
-        SSAPI -> SSAPI: Update Event log
+        SSAPI --> SSAPI: Update Event log
         note right of SSAPI #LightBlue
             Log ERROR Messages.
             Update Event log with ERROR.
@@ -80,8 +80,9 @@ group Request Settlement Window properties
               "message": "string"
             }
         end note
-        OPERATOR <- SSAPI: Return ERROR
-        deactivate SSAPI
+        OPERATOR <-- SSAPI: Return ERROR
+    deactivate SSAPI
+    deactivate OPERATOR
     end
 end
 @enduml

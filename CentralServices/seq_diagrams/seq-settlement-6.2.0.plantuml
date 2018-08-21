@@ -1,0 +1,221 @@
+@startuml
+' declate title
+title Returns Settlement(s) as per parameters/filter criteria
+'title 6.2.0. getSettlementId GET: /settlement
+
+autonumber
+
+' declare actors
+actor "Hub Employee" as OPERATOR
+
+boundary "Settlement Service API" as SSAPI
+entity "Settlement DAO" as SETTLE_DAO
+
+database "Central Store" as DB
+
+box "Central HUB" #LightPink
+    participant OPERATOR
+end box
+
+box "Settlement Service" #LightGreen
+    participant SSAPI
+    participant SETTLE_DAO
+end box
+
+box "Central Services" #LightYellow
+    participant DB
+end box
+
+' start flow
+group Request Settlement Details
+    activate OPERATOR
+    note right of OPERATOR #Yellow
+        **Filtering Params:**
+        &settlementWindowId=/settlementWindow/{id}
+        &currencyId=/currency/{id}
+        &participantId=/participant/{id}
+        &accountId=/account/{id}
+        &state={state}
+        &fromDateTime={yyyy-mm-ddThh:mm}
+        &toDateTime={yyyy-mm-ddThh:mm}
+    end note
+
+    OPERATOR -> SSAPI: GET - /settlement/{id}
+    activate SSAPI
+    SSAPI -> SETTLE_DAO: Retrieve full settlement details\n<color #FF0000><b>Error code:</b> 2001</color>
+    activate SETTLE_DAO
+
+    SETTLE_DAO -> DB: Select settlement from DB
+    activate DB
+    hnote over DB #LightYellow
+        SELECT s.settlementId, ssc.settlementStateId, ssc.reason, ssc.createdDate
+        FROM **settlement** AS s
+        LEFT JOIN **settlementStateChange** AS ssc
+        ON ssc.settlementId = s.settlementId
+        AND ssc.settelementStateChangeId = (
+            SELECT MAX(ssc1.settelementStateChangeId)
+            FROM **settlementStateChange** AS ssc1
+            WHERE ssc1.settlementId = {id})
+        WHERE s.settlementId = {id}
+    end hnote
+
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        note left of SETTLE_DAO #LightGray
+            **settlementData**
+            Contains information about settlement and its current state/reason
+        end note
+        SSAPI <-- SETTLE_DAO: Return **settlementData**
+        deactivate SETTLE_DAO
+    alt settlement found
+        SSAPI -> SETTLE_DAO: Retrieve full information for settlement accounts\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
+        SETTLE_DAO -> DB: Select from DB
+        activate DB
+        hnote over DB #LightYellow
+            SELECT pc.participantId, spc.participantCurrencyId, spcsc.settlementStateId, spcsc.reason,
+                spcsc.createdDate, spc.netAmount, pc.currencyId, spc.settlementParticipantCurrencyId
+            FROM **settlementParticipantCurrency** AS spc
+            JOIN (SELECT spcsc1.settlementParticipantCurrencyId,
+                    MAX(spcsc1.settlementParticipantCurrencyStateChangeId) AS
+                    maxSettlementParticipantCurrencyStateChangeId
+                FROM **settlementParticipantCurrency** AS spc1
+                JOIN **settlementParticipantCurrencyStateChange** AS spcsc1
+                ON spcsc1.settlementParticipantCurrencyId = spc1.settlementParticipantCurrencyId
+                WHERE spc1.settlementId = {id}
+                GROUP BY spcsc1.settlementParticipantCurrencyId) spcs
+            JOIN **settlementParticipantCurrencyStateChange** AS spcsc
+            ON spcsc.settlementParticipantCurrencyStateChangeId =
+                spcs.maxSettlementParticipantCurrencyStateChangeId
+            JOIN **participantCurrency** AS pc
+            ON pc.participantCurrencyId = spc.participantCurrencyId
+            WHERE spc.settlementId = {id}
+        end hnote
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        note left of SETTLE_DAO #LightGray
+            **settlementAccountsList**
+            Holds information about all accounts and their current state/reason
+        end note
+        SSAPI <-- SETTLE_DAO: Return **settlementAccountsList**
+        deactivate SETTLE_DAO
+
+        SSAPI -> SETTLE_DAO: Retrieve full information for settlement windows\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
+        SETTLE_DAO -> DB: Select from DB
+        activate DB
+        hnote over DB #LightYellow
+            SELECT ssw.settlementWindowId, sswsc.settlementWindowStateId, sswsc.reason, sswsc.createdDate
+            FROM **settlementSettlementWindow** AS ssw
+            JOIN (SELECT sswsc1.settlementWindowId, MAX(sswsc1.settlementWindowStateChangeId) AS
+                        maxSettlementWindowStateChangeId
+                    FROM **settlementSettlementWindowStateChange** AS sswsc1
+                   WHERE sswsc1.settlementWindowId IN (
+                        SELECT ssw1.settlementWindowId
+                    FROM **settlementSettlementWindow** AS ssw1
+                    WHERE ssw1.settlementId = {id})
+                GROUP BY sswsc1.settlementWindowId) ssws
+            ON ssws.settlementWindowId = ssw.settlementWindowId
+            JOIN **settlementSettlementWindowStateChange** AS sswsc
+            ON sswsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
+            WHERE ssw.settlementId = {id}
+        end hnote
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        note left of SETTLE_DAO #LightGray
+            **windowsList**
+            Has information about all windows and their current state/reason
+        end note
+        SSAPI <-- SETTLE_DAO: Return **windowsList**
+        deactivate SETTLE_DAO
+
+        SSAPI -> SETTLE_DAO: Retrieve full information for settlement windows accounts\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
+        SETTLE_DAO -> DB: Select from DB
+        activate DB
+        hnote over DB #LightYellow
+            SELECT ssw.settlementWindowId, tp.participantCurrencyId
+            FROM **settlementSettlementWindow** AS ssw
+            JOIN **transferFulfilment** AS tf
+            ON tf.settlementWindowId = ssw.settlementWindowId
+            JOIN **transferParticipant** AS tp
+            ON tp.transferId = tf.transferId
+            WHERE settlementId = {id}
+            GROUP BY ssw.settlementWindowId, tp.participantCurrencyId
+        end hnote
+        SETTLE_DAO <-- DB: Return data
+        deactivate DB
+        note left of SETTLE_DAO #LightGray
+            **windowsAccountsList**
+            Has information about all accounts and windows
+        end note
+        SSAPI <-- SETTLE_DAO: Return **windowsAccountsList**
+        deactivate SETTLE_DAO
+
+        note right of SSAPI #Pink
+        **Design still in progress**
+
+        Apply filters to datalist(s) from DB
+        Format reply messages
+        end note
+
+        SSAPI <-- SETTLE_DAO: Operation successfully completed
+        note left of SSAPI #Yellow
+            [
+              {
+                "Id": 0,
+                "State": "string",
+                "settlementWindows": [
+                  [
+                    {
+                      "id": 0,
+                      "reason": "string",
+                      "state": "string",
+                      "createdDate": "string",
+                      "changedDate": "string"
+                    }
+                  ]
+                ],
+                "Participants": [
+                  {
+                    "id": 0,
+                    "accounts": [
+                      {
+                        "id": "string",
+                        "reason": "string",
+                        "state": "PENDING-SETTLEMENT",
+                        "netSettlementAmount": {
+                          "amount": 0,
+                          "currency": "string"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+        end note
+        OPERATOR <-- SSAPI: Return results
+    deactivate SSAPI
+    else <color #FF0000><b>Settlement not found</b></color>
+        SETTLE_DAO --> SSAPI: settlement not found - Return ERROR
+        deactivate SETTLE_DAO
+        activate SSAPI
+        SSAPI --> SSAPI: Update Event log
+        note right of SSAPI #LightBlue
+            Log ERROR Messages.
+            Update Event log with ERROR.
+        end note
+        note left of SSAPI #Yellow
+            {
+              "status": 0,
+              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
+              "message": "string"
+            }
+        end note
+        OPERATOR <-- SSAPI: Return ERROR
+        deactivate SSAPI
+    deactivate OPERATOR
+    end
+end
+@enduml
