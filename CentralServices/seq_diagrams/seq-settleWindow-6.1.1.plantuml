@@ -1,16 +1,13 @@
 @startuml
 ' declate title
-title Returns a Settlement Window as per id
-'title 6.1.1. getSettlementWindowById GET: /settlementWindows
+title 6.1.1. Request Settlement Window information
 
 autonumber
 
 ' declare actors
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -31,36 +28,27 @@ group Request Settlement Window properties
     activate OPERATOR
     OPERATOR -> SSAPI: GET - /settlementWindows/{id}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Request settlementWindow
+    SSAPI -> SETTLE_DAO: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    SETTLE_DAO -> DB: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
+    SETTLE_DAO -> DB: Request settlementWindow
     activate DB
-    note over DB #LightYellow
-        **settlementWindow**
-            createDate
-        **settlementWindowStateChange**
-            state
-            reason
-            changeDate
-    end note
     hnote over DB #LightYellow
         SELECT sw.settlementWindowId, swsc.reason, swsc.settlementWindowStateId,
-                sw.createdDate, swsc.createdDate as changedDate
-        FROM settlementWindow AS sw
+                sw.createdDate, swsc.createdDate changedDate
+        FROM **settlementWindow** sw
             JOIN (SELECT swsc.settlementWindowId,
-                    MAX(swsc.settlementWindowStateChangeId) AS maxSettlementWindowStateChangeId
-                FROM settlementWindowStateChange AS swsc
+                    MAX(swsc.settlementWindowStateChangeId) maxSettlementWindowStateChangeId
+                FROM **settlementWindowStateChange** swsc
                 WHERE swsc.settlementWindowId
                 GROUP BY swsc.settlementWindowId) ssws
             ON ssws.settlementWindowId = sw.settlementWindowId
-        JOIN settlementWindowStateChange AS swsc
+        JOIN **settlementWindowStateChange** swsc
         ON swsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
-        WHERE sw.settlementWindowId = /settlementWindow/{id};
+        WHERE sw.settlementWindowId = {id}
     end hnote
-    SETTLE_DAO <-- DB: Return results
     deactivate DB
     alt settlementWindow found
-        SSAPI <-- SETTLE_DAO: Operation successfully completed
+        SSAPI <-- SETTLE_DAO: Return Results
         note left of SSAPI #Yellow
             {
               "id": 0,
@@ -70,23 +58,19 @@ group Request Settlement Window properties
               "changedDate": "string"
             }
         end note
-        OPERATOR <-- SSAPI: Return results
-    else <color #FF0000><b>Settlement Window not found</b></color>
-        SETTLE_DAO --> SSAPI: settlement window not found - Return ERROR
-        deactivate SETTLE_DAO
-        SSAPI --> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-            Log ERROR Messages.
-            Update Event log with ERROR.
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>200 (OK)</color>
+    else Settlement Window not found
+        note right of SSAPI #lightgray
+            Log ERROR event
         end note
-        note left of SSAPI #Yellow
+        note left of SSAPI #yellow
             {
-              "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Return ERROR
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
     deactivate SSAPI
     deactivate OPERATOR
     end

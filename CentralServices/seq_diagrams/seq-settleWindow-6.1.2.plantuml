@@ -51,7 +51,7 @@ group Request closure of Settlement Window
                 }
             }
         end note
-        OPERATOR <-- SSAPI: Respond HTTP - 400 (Bad Request)
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>400 (Bad Request)</color>
     end
     SSAPI -> SETTLE_DAO: Get requested settlementWindow and state\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
