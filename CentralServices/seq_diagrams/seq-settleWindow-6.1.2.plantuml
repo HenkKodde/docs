@@ -24,7 +24,7 @@ box "Central Services" #LightYellow
 end box
 
 ' start flow
-group Request closure of Settlement Window
+group Close Settlement Window
     activate OPERATOR
     note right of OPERATOR #Yellow
         {
@@ -59,23 +59,19 @@ group Request closure of Settlement Window
     activate DB
     hnote over DB #lightyellow
         SELECT sw.settlementWindowId, swsc.settlementWindowStateId
-        FROM settlementWindow AS sw
-            JOIN (SELECT swsc1.settlementWindowId, 
-                            MAX(swsc1.settlementWindowStateChangeId)
-                            maxSettlementWindowStateChangeId
-                    FROM settlementWindowStateChange AS swsc1
-                    WHERE swsc1.settlementWindowId
-                    GROUP BY swsc1.settlementWindowId) sws
-            ON sws.settlementWindowId = sw.settlementWindowId
-        JOIN settlementWindowStateChange AS swsc
-        ON swsc.settlementWindowStateChangeId = sws.maxSettlementWindowStateChangeId
+        FROM **settlementWindow** AS sw
+        JOIN **settlementWindowStateChange** AS swsc
+        ON swsc.settlementWindowStateChangeId = (
+            SELECT MAX(settlementWindowStateChangeId)
+            FROM **settlementWindowStateChange**
+            WHERE settlementWindowId = {id})
         WHERE sw.settlementWindowId = {id}
     end hnote
     deactivate DB
     SETTLE_DAO --> SSAPI: Return result
     deactivate SETTLE_DAO
 
-    alt 1 row returned && settlementWindowStateId == 'OPEN'
+    alt settlementWindow found && settlementWindowStateId == 'OPEN'
         SSAPI -> SETTLE_DAO: Close current window and open a new one\n<color #FF0000><b>Error code:</b> 2001</color>
         activate SETTLE_DAO
         group <color #blue>DB TRANSACTION</color>
@@ -115,11 +111,11 @@ group Request closure of Settlement Window
 
         note left of SSAPI #yellow
             {
-                "id": 0,
-                "reason": "string",
-                "state": "string",
-                "createdDate": "string",
-                "changedDate": "string"
+                "id": <integer>,
+                "state": <string>,
+                "reason": <string>,
+                "createdDate": <date>,
+                "changedDate": <date>
             }
         end note
         OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>201 (Created)</color>
@@ -134,7 +130,7 @@ group Request closure of Settlement Window
                 "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
+        OPERATOR <-- SSAPI: Respond HTTP - 4xx (Client error)
         deactivate SSAPI
         deactivate OPERATOR
     end

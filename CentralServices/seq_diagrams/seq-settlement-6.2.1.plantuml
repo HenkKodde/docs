@@ -1,16 +1,12 @@
 @startuml
 ' declate title
-title Trigger the creation of a settlement event
-'title 6.2.1. postSettlementEvent POST: /settlementEventTrigger
-
+title 6.2.1. Trigger Settlement Event
 autonumber
 
 ' declare actors
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -31,16 +27,16 @@ group Trigger Settlement Event
 activate OPERATOR
     note right of OPERATOR #Yellow
         {
-          "settlementId": 0,
-          "reason": "string",
-          "settlementWindows": [
-            {
-              "id": 1,
-            },
-            {
-              "id": 2,
-            }
-          ]
+            "id": 0,
+            "reason": "string",
+            "settlementWindows": [
+                {
+                    "id": 1,
+                },
+                {
+                    "id": 2,
+                }
+            ]
         }
     end note
     note right of OPERATOR #LightGray

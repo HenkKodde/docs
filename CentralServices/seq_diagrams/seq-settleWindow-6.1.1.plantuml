@@ -1,94 +1,77 @@
 @startuml
 ' declate title
-title Returns a Settlement Window as per id
-'title 6.1.1. getSettlementWindowById GET: /settlementWindows
+title 6.1.1. Request Settlement Window By id
 
 autonumber
 
 ' declare actors
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
-box "Central HUB" #LightPink
+box "Central HUB" #lightpink
     participant OPERATOR
 end box
 
-box "Settlement Service" #LightGreen
+box "Settlement Service" #lightgreen
     participant SSAPI
     participant SETTLE_DAO
 end box
 
-box "Central Services" #LightYellow
+box "Central Services" #lightyellow
     participant DB
 end box
 
 ' start flow
-group Request Settlement Window properties
+group Request Settlement Window
     activate OPERATOR
     OPERATOR -> SSAPI: GET - /settlementWindows/{id}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Request settlementWindow
+    SSAPI -> SETTLE_DAO: Request settlementWindow by id\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    SETTLE_DAO -> DB: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
+    SETTLE_DAO -> DB: Select from DB
     activate DB
-    note over DB #LightYellow
-        **settlementWindow**
-            createDate
-        **settlementWindowStateChange**
-            state
-            reason
-            changeDate
-    end note
-    hnote over DB #LightYellow
-        SELECT sw.settlementWindowId, swsc.reason, swsc.settlementWindowStateId,
-                sw.createdDate, swsc.createdDate as changedDate
-        FROM settlementWindow AS sw
-            JOIN (SELECT swsc.settlementWindowId,
-                    MAX(swsc.settlementWindowStateChangeId) AS maxSettlementWindowStateChangeId
-                FROM settlementWindowStateChange AS swsc
-                WHERE swsc.settlementWindowId
-                GROUP BY swsc.settlementWindowId) ssws
-            ON ssws.settlementWindowId = sw.settlementWindowId
-        JOIN settlementWindowStateChange AS swsc
-        ON swsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
-        WHERE sw.settlementWindowId = /settlementWindow/{id};
+    hnote over DB #lightyellow
+        SELECT sw.settlementWindowId, swsc.settlementWindowStateId, 
+               swsc.reason, sw.createdDate, swsc.createdDate changedDate
+        FROM **settlementWindow** AS sw
+        JOIN **settlementWindowStateChange** AS swsc
+        ON swsc.settlementWindowStateChangeId = (
+            SELECT MAX(settlementWindowStateChangeId)
+            FROM **settlementWindowStateChange**
+            WHERE settlementWindowId = {id})
+        WHERE sw.settlementWindowId = {id}
     end hnote
-    SETTLE_DAO <-- DB: Return results
     deactivate DB
+    SSAPI <-- SETTLE_DAO: Return data
+    deactivate SETTLE_DAO
+
     alt settlementWindow found
-        SSAPI <-- SETTLE_DAO: Operation successfully completed
         note left of SSAPI #Yellow
             {
-              "id": 0,
-              "reason": "string",
-              "state": "string",
-              "createdDate": "string",
-              "changedDate": "string"
+                "id": <integer>,
+                "reason": <string>,
+                "state": <string>,
+                "createdDate": <date>,
+                "changedDate": <date>
             }
         end note
-        OPERATOR <-- SSAPI: Return results
-    else <color #FF0000><b>Settlement Window not found</b></color>
-        SETTLE_DAO --> SSAPI: settlement window not found - Return ERROR
-        deactivate SETTLE_DAO
-        SSAPI --> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-            Log ERROR Messages.
-            Update Event log with ERROR.
+        OPERATOR <-- SSAPI: Respond HTTP - 200 (OK)
+    else
+        note right of SSAPI #lightgray
+            Log ERROR event
         end note
-        note left of SSAPI #Yellow
+        note left of SSAPI #yellow
             {
-              "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Return ERROR
-    deactivate SSAPI
-    deactivate OPERATOR
+        OPERATOR <-- SSAPI: Respond HTTP - 4xx (Client error)
+        deactivate SSAPI
+        deactivate OPERATOR
     end
 end
 @enduml
