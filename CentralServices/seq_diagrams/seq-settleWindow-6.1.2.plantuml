@@ -1,6 +1,6 @@
 @startuml
 ' declate title
-title 6.1.2. Close Settlement Window
+title 6.1.2. Close Settlement Window (closeSettlementWindow)
 
 autonumber 
 
@@ -10,23 +10,23 @@ boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
 database "Central Store" as DB
 
-box "Central HUB" #LightPink
+box "Central HUB" #lightpink
     participant OPERATOR
 end box
 
-box "Settlement Service" #LightGreen
+box "Settlement Service" #lightgreen
     participant SSAPI
     participant SETTLE_DAO
 end box
 
-box "Central Services" #LightYellow
+box "Central Services" #lightyellow
     participant DB
 end box
 
 ' start flow
 group Close Settlement Window
     activate OPERATOR
-    note right of OPERATOR #Yellow
+    note right of OPERATOR #yellow
         {
             "state": "CLOSED",
             "reason": <string>
@@ -76,7 +76,7 @@ group Close Settlement Window
         activate SETTLE_DAO
         group <color #blue>DB TRANSACTION</color>
             SETTLE_DAO -> DB: Close requested window
-            hnote over DB #LightYellow
+            hnote over DB #lightyellow
                 INSERT INTO **settlementWindowStateChange**
                        (settlementWindowId, settlementWindowStateId, reason)
                 VALUES ({id}, payload.state, payload.reason)

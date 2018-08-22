@@ -1,6 +1,6 @@
 @startuml
 ' declate title
-title 6.2.1. Trigger Settlement Event
+title 6.2.1. Trigger Settlement Event (settlementEventTrigger)
 autonumber
 
 ' declare actors
