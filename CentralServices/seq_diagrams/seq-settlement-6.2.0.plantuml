@@ -1,16 +1,13 @@
 @startuml
 ' declate title
-title Returns Settlement(s) as per parameters/filter criteria
-'title 6.2.0. getSettlementId GET: /settlement
+title 6.2.0. Returns Settlement(s) as per parameters/filter criteria
 
 autonumber
 
 ' declare actors
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -64,7 +61,7 @@ group Request Settlement Details
         end note
         SSAPI <-- SETTLE_DAO: Return **settlementData**
         deactivate SETTLE_DAO
-    alt settlement found
+    alt Settlement found
 
         SSAPI -> SETTLE_DAO: Retrieve full information for settlement windows\n<color #FF0000><b>Error code:</b> 2001</color>
         activate SETTLE_DAO
@@ -198,23 +195,18 @@ group Request Settlement Details
         end note
         OPERATOR <-- SSAPI: Return results
     deactivate SSAPI
-    else <color #FF0000><b>Settlement not found</b></color>
-        SETTLE_DAO --> SSAPI: settlement not found - Return ERROR
-        deactivate SETTLE_DAO
-        activate SSAPI
-        SSAPI --> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-            Log ERROR Messages.
-            Update Event log with ERROR.
+    else Settlement not found
+        note right of SSAPI #lightgray
+            Log ERROR event
         end note
-        note left of SSAPI #Yellow
+        note left of SSAPI #yellow
             {
-              "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Return ERROR
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
         deactivate SSAPI
     deactivate OPERATOR
     end

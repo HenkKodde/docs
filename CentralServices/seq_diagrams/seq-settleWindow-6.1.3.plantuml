@@ -1,16 +1,14 @@
 @startuml
 ' declate title
-title Request settlementWindow by parameters.
-'6.1.3. getSettlementWindowByParams GET: /settlementWindows
+title 6.1.3. Request Settlement Window(s) as per parameter(s).
 
 autonumber
+
 ' declare actors
 
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -28,7 +26,7 @@ end box
 
 ' start flow
 
-group Retrieve SettlementWindow properties per parameters.
+group Retrieve SettlementWindow per parameters.
     activate OPERATOR
     note right of OPERATOR #Yellow
         **Filtering Params:**
@@ -39,9 +37,9 @@ group Retrieve SettlementWindow properties per parameters.
     end note
     OPERATOR -> SSAPI: GET - /settlementWindows/{params}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Request settlementWindow
+    SSAPI -> SETTLE_DAO: Request settlementWindow\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    SETTLE_DAO -> DB: Request settlementWindow \n<color #FF0000><b>Error code:</b> 2001</color>
+    SETTLE_DAO -> DB: Request settlementWindow
     activate DB
     hnote over DB #LightYellow
         settlementWindow
@@ -70,10 +68,12 @@ group Retrieve SettlementWindow properties per parameters.
         (participantId) = {&participantId={id}}
 
     end note
-    SETTLE_DAO <-- DB: Return result
+    hnote over DB #LightYellow
+    end hnote
     deactivate DB
-    alt Return settlementWindow(s)
-        SSAPI <-- SETTLE_DAO: Successful - return results
+    SSAPI <-- SETTLE_DAO: Return result
+    deactivate SETTLE_DAO
+    alt Return Settlement Window
         note left of SSAPI #Yellow
           [
             {
@@ -85,25 +85,19 @@ group Retrieve SettlementWindow properties per parameters.
             }
           ]
         end note
-        OPERATOR <-- SSAPI: Return results
-        deactivate SSAPI
-    else <color #FF0000><b>settlementWindow not found</b></color>
-        SSAPI <-- SETTLE_DAO: Unsuccessful result - return ERROR
-        deactivate SETTLE_DAO
-        activate SSAPI
-        SSAPI -> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-            Log ERROR Messages.
-            Update Event log with ERROR.
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>200 (OK)</color>
+    else Settlement Window not found
+        note right of SSAPI #lightgray
+            Log ERROR event
         end note
-        note left of SSAPI #Yellow
+        note left of SSAPI #yellow
             {
-              "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Return ERROR
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
         deactivate SSAPI
     deactivate OPERATOR
     end

@@ -2,7 +2,7 @@
 ' declate title
 title 6.1.2. Close Settlement Window
 
-autonumber
+autonumber 
 
 ' declare actors
 actor "Hub Employee" as OPERATOR

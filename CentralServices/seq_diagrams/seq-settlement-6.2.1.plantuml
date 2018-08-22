@@ -39,22 +39,23 @@ activate OPERATOR
             ]
         }
     end note
-    note right of OPERATOR #LightGray
-        verify if we need the rest of the Swagger messages?
-    end note
     OPERATOR -> SSAPI: POST - /settlement/{id}
     activate SSAPI
-    SSAPI-> SETTLE_DAO: Create new settlement
+    SSAPI-> SETTLE_DAO: Create new settlement\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    SETTLE_DAO -> DB: Insert new settlement\n<color #FF0000><b>Error code:</b> 2001</color>
+    SETTLE_DAO -> DB: Insert new settlement
     activate DB
+    deactivate SETTLE_DAO
     hnote over DB #LightYellow
         INSERT INTO **settlement**
-            (reason)
-            VALUE (payload./settlementId/{reason});
+            reason
+            VALUES (payload.reason)
     end hnote
     deactivate DB
-    SETTLE_DAO -> DB: Get settlementWindow(s)\n<color #FF0000><b>Error code:</b> 2001</color>
+
+    SSAPI-> SETTLE_DAO: Request settlementWindow(s)\n<color #FF0000><b>Error code:</b> 2001</color>
+    activate SETTLE_DAO
+    SETTLE_DAO -> DB: Retrieve settlementWindow(s)
     activate DB
     hnote over DB #LightYellow
         SELECT MAX(settlementWindowStateChangeId), settlementWindowStateId, reason
@@ -63,25 +64,48 @@ activate OPERATOR
         GROUP BY settlementWindowStateId,settlementWindowId, reason;
     end hnote
     deactivate DB
+    SSAPI <-- SETTLE_DAO: Return results
+    deactivate SETTLE_DAO
 
-    group Validate the list of settlement windows
-        note right of SETTLE_DAO #LightGray
-            allSettlementWindowsClosed = true
-        end note
-        loop
-            SETTLE_DAO <--> SETTLE_DAO: if settlementWindowStateId != 'CLOSED' \nthen allSettlementWindowsClosed = false
-        end loop
-    end
-
-    alt allSettlementWindowsClosed == true
+    alt Settlement Windows found
+        break
+            group Validate the list of settlement windows
+                note right of SSAPI #LightGray
+                    allSettlementWindowsClosed = true
+                end note
+                loop
+                    SSAPI --> SSAPI: if settlementWindowStateId != 'CLOSED' \nthen allSettlementWindowsClosed = false
+                end loop
+            end
+            note right of SSAPI #yellow
+                {
+                    "status": 0, <color #FF0000>**?**</color>
+                    "code": <integer>,
+                    "message": "Invalid payload or state"
+                }
+                <color #FF0000>**OR**</color> what is used in 6.2.5.:
+                {
+                    errorInformation: {
+                        "errorCode": <integer>,
+                        "errorDescription": "Invalid payload or state"
+                    }
+                }
+            end note
+            OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>400 (Bad Request)</color>
+        end
+        SSAPI ->SETTLE_DAO: Request 'CLOSE' & 'OPEN' of Settlement Windows\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
         group <color #blue>DB TRANSACTION</color>
             SETTLE_DAO -> DB: Insert the list of settlementWindows
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementSettlementWindow**
                 	(settlementId, settlementWindowId)
                     VALUE(payload.settlementId, payload./settlementWindow/{id});
             end hnote
+            deactivate DB
             SETTLE_DAO -> DB: Populate settlementTransferParticipant with aggregated data
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementTransferParticipant**
                     (settlementId, participantCurrencyId, transferParticipantRoleTypeId,
@@ -101,7 +125,9 @@ activate OPERATOR
                     GROUP BY tp.participantCurrencyId, tp.transferParticipantRoleTypeId,
                         tp.ledgerEntryTypeId
             end hnote
+            deactivate DB
             SETTLE_DAO -> DB: Populate settlementParticipantCurrency with aggregated data
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementParticipantCurrency**
                     (settlementId, participantCurrencyId, netAmount)
@@ -115,7 +141,9 @@ activate OPERATOR
                 WHERE settlementId = payload.settlementId
                 GROUP BY settlementId, participantCurrencyId
             end hnote
+            deactivate DB
             SETTLE_DAO -> DB: Insert initial state change 'PENDING_SETTLEMENT'
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementParticipantCurrencyStateChange**
                     (settlementParticipantCurrencyId, settlementStateId, reason)
@@ -123,7 +151,9 @@ activate OPERATOR
                 FROM **settlementParticipantCurrency**
                 WHERE settlementId = payload.settlementId
             end hnote
+            deactivate DB
             SETTLE_DAO -> DB: Insert initial state for settlement 'PENDING_SETTLEMENT'
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementStateChange**
                     (settlementId, settlementStateId, reason)
@@ -131,14 +161,18 @@ activate OPERATOR
                 FROM **settlementParticipantCurrency**
                 WHERE settlementId = payload.settlementId
             end hnote
+            deactivate DB
             SETTLE_DAO -> DB: Insert new state for settlementWindow 'PENDING_SETTLEMENT'
+            activate DB
             hnote over DB #LightYellow
                 INSERT INTO **settlementWindowStateChange**
                     (settlementWindowId, settlementWindowStateId, reason)
                 VALUE payload./settlementWindow/{id}, 'PENDING_SETTLEMENT', payload.reason
             end hnote
+            deactivate DB
         end
         SSAPI <-- SETTLE_DAO: Results for participant netAmount per ledger for closed settlement window
+        deactivate SETTLE_DAO
         note left of SSAPI #Yellow
             {
               "id": "string",
@@ -150,27 +184,21 @@ activate OPERATOR
               }
             }
         end note
-        OPERATOR <-- SSAPI: Results for participant netAmount per ledger for closed settlement window
-        deactivate SSAPI
-    else allSettlementWindowsClosed == false
-        SETTLE_DAO --> SSAPI: settlementWindows not closed - Return ERROR
-        deactivate SETTLE_DAO
-        activate SSAPI
-        SSAPI <--> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-            Log ERROR Messages.
-            Update Event log with ERROR.
-            end note
-        note left of SSAPI #Yellow
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>200 (OK)</color>
+    else Settlement Windows not found
+        note right of SSAPI #lightgray
+            Log ERROR event
+        end note
+        note left of SSAPI #yellow
             {
-              "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
             }
         end note
-        OPERATOR <-- SSAPI: Return ERROR
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
         deactivate SSAPI
+        deactivate OPERATOR
     end
-deactivate OPERATOR
 end
 @enduml
