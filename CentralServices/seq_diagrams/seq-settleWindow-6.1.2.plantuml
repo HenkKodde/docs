@@ -1,16 +1,13 @@
 @startuml
 ' declate title
-title Request to Close SettlementWindow
-'title 6.1.2. closeSettlementWindow POST: /settlementWindows
+title 6.1.2. Close Settlement Window
 
 autonumber
 
 ' declare actors
 actor "Hub Employee" as OPERATOR
-
 boundary "Settlement Service API" as SSAPI
 entity "Settlement DAO" as SETTLE_DAO
-
 database "Central Store" as DB
 
 box "Central HUB" #LightPink
@@ -31,136 +28,113 @@ group Request closure of Settlement Window
     activate OPERATOR
     note right of OPERATOR #Yellow
         {
-          "state": "closed",
-          "reason": "motivation for closure."
+            "state": "CLOSED",
+            "reason": <string>
         }
     end note
+
     OPERATOR -> SSAPI: POST - /settlementWindows/{id}
     activate SSAPI
-    SSAPI -> SETTLE_DAO: Close settlementWindow<id> and open new settlementWindow
+    SSAPI -> SSAPI: Validate payload and requested state
+    break
+        note right of SSAPI #yellow
+            {
+                "status": 0, <color #FF0000>**?**</color>
+                "code": <integer>,
+                "message": "Invalid payload or state"
+            }
+            <color #FF0000>**OR**</color> what is used in 6.2.5.:
+            {
+                errorInformation: {
+                    "errorCode": <integer>,
+                    "errorDescription": "Invalid payload or state"
+                }
+            }
+        end note
+        OPERATOR <-- SSAPI: Respond HTTP - 400 (Bad Request)
+    end
+    SSAPI -> SETTLE_DAO: Get requested settlementWindow and state\n<color #FF0000><b>Error code:</b> 2001</color>
     activate SETTLE_DAO
-    alt
+    SETTLE_DAO -> DB: Get settlementWindow state
+    activate DB
+    hnote over DB #lightyellow
+        SELECT sw.settlementWindowId, swsc.settlementWindowStateId
+        FROM settlementWindow AS sw
+            JOIN (SELECT swsc1.settlementWindowId, 
+                            MAX(swsc1.settlementWindowStateChangeId)
+                            maxSettlementWindowStateChangeId
+                    FROM settlementWindowStateChange AS swsc1
+                    WHERE swsc1.settlementWindowId
+                    GROUP BY swsc1.settlementWindowId) sws
+            ON sws.settlementWindowId = sw.settlementWindowId
+        JOIN settlementWindowStateChange AS swsc
+        ON swsc.settlementWindowStateChangeId = sws.maxSettlementWindowStateChangeId
+        WHERE sw.settlementWindowId = {id}
+    end hnote
+    deactivate DB
+    SETTLE_DAO --> SSAPI: Return result
+    deactivate SETTLE_DAO
+
+    alt 1 row returned && settlementWindowStateId == 'OPEN'
+        SSAPI -> SETTLE_DAO: Close current window and open a new one\n<color #FF0000><b>Error code:</b> 2001</color>
+        activate SETTLE_DAO
         group <color #blue>DB TRANSACTION</color>
-            SETTLE_DAO -> DB: Get state for settlementWindow from DB \n<color #FF0000><b>Error code:</b> 2001</color>
-            activate DB
-            note over DB #LightYellow
-                GET
-                **settlementWindowStateChange**
-                    settlementWindowId = {id}
-                    state
-            end note
+            SETTLE_DAO -> DB: Close requested window
             hnote over DB #LightYellow
-                SELECT sw.settlementWindowId, swsc.settlementWindowStateId
-                FROM settlementWindow AS sw
-                    JOIN (SELECT swsc.settlementWindowId,
-                            MAX(swsc.settlementWindowStateChangeId)
-                                AS maxSettlementWindowStateChangeId
-                        FROM settlementWindowStateChange AS swsc
-                        WHERE swsc.settlementWindowId
-                        GROUP BY swsc.settlementWindowId) ssws
-                    ON ssws.settlementWindowId = sw.settlementWindowId
-                JOIN settlementWindowStateChange AS swsc
-                ON swsc.settlementWindowStateChangeId = ssws.maxSettlementWindowStateChangeId
-                WHERE sw.settlementWindowId = /settlementWindow/{id};
+                INSERT INTO **settlementWindowStateChange**
+                       (settlementWindowId, settlementWindowStateId, reason)
+                VALUES ({id}, payload.state, payload.reason)
             end hnote
             deactivate DB
-            group Validate window state
-                SETTLE_DAO <--> SETTLE_DAO: Validate settlementWindowStateId == 'OPEN'
-            end
-            SETTLE_DAO -> DB: Insert settlementWindowStateId == 'CLOSED'
-            note over DB #Lightpink
-                Lock **settlementWindowStateChange** for read
+
+            note right of SETTLE_DAO #lightgray
+                let transactionTimestamp = now()
             end note
+
+            SETTLE_DAO -> DB: Create new settlementWindow
             activate DB
-            hnote over DB #LightYellow
-                INSERT
-                **settlementWindowStateChange**
-                settlementWindowId = {id}
-                state
-                reason
-            end hnote
-            hnote over DB #LightYellow
-                INSERT INTO settlementWindowStateChange
-                    (settlementWindowId, settlementWindowStateId, reason)
-                    VALUE (payload./settlementWindow/{id}, payload.state, paylaod.reason);
-            end hnote
-            deactivate DB
-            SETTLE_DAO -> DB: Create new settlementWindow \n state == 'open'\n reason == 'motivation for new Window' \n<color #FF0000><b>Error code:</b> 2001</color>
-            activate DB
-            hnote over DB #LightYellow
-                INSERT
-                **settlementWindow**
-                    reason
-
-                GET
-                **settlementWindow**
-                    {new id}    "id"
-                    createdDate "createDate"
-
-                INSERT
-                **settlementWindowStateChange**
-                    {new id}
-                    state
-                    reason
-
-                GET
-                **settlementWindow**
-                    {new id}    "id"
-                    createdDate "createdDate"
-                **settlementWindowStateChange**
-                    {new id}
-                    reason  "reason"
-                    state   "state"
-                    createdDate "changedDate"
-
-'                INSERT INTO **settlementWindow**
-'                    (reason)
-'                    VALUE (payload.reason);
-'
-'                SELECT MAX(settlementWindowId) AS nsw
-'                FROM **settlementWindow**
-'                GROUP BY settlementWindowId
-'                ORDER BY settlementWindowId DESC LIMIT 1;
-'
-'                INSERT INTO **settlementWindowStateChange**
-'                    (settlementWindowId, settlementWindowStateId, reason)
-'                    VALUE (nsw, 'OPEN', {reason});
-            end hnote
-            deactivate DB
-            note over DB #Lightpink
-            Unlock **settlementWindowStateChange**
+            hnote over DB #lightyellow
+                INSERT INTO **settlementWindow** (reason, createdDate)
+                VALUES (payload.reason, transactionTimestamp)
             end note
+            SETTLE_DAO <-- DB: Return @settlementWindowId
+            deactivate DB
+
+            SETTLE_DAO -> DB: Insert intial state for the created window
+            activate DB
+            hnote over DB #lightyellow
+                INSERT INTO **settlementWindowStateChange**
+                       (settlementWindowId, settlementWindowStateId, reason, createdDate)
+                VALUES (@settlementWindowId, 'OPEN', payload.reason, transactionTimestamp)
+            end note
+            deactivate DB
+            deactivate DB
         end
-        SSAPI <-- DB: Operation successfully completed
-        note left of SSAPI #Yellow
-        {
-          "id": 0,
-          "reason": "string",
-          "state": "string",
-          "createdDate": "string",
-          "changedDate": "string"
-        }
-        end note
-        OPERATOR <-- SSAPI: Return results
-        deactivate SSAPI
-    else <color #FF0000><b>settlementWindow not found or settlementWindow state 'open'</b></color>
-
-        SSAPI <-- SETTLE_DAO: settlementWindow not found - return ERROR
+        SSAPI <-- SETTLE_DAO: Return success
         deactivate SETTLE_DAO
-        activate SSAPI
-        SSAPI --> SSAPI: Update Event log
-        note right of SSAPI #LightBlue
-        Log ERROR Messages.
-        Update Event log with ERROR.
+
+        note left of SSAPI #yellow
+            {
+                "id": 0,
+                "reason": "string",
+                "state": "string",
+                "createdDate": "string",
+                "changedDate": "string"
+            }
         end note
-        note left of SSAPI #Yellow
-        {
-          "status": 0,
-              "code": "(ERROR response code eg. '404' - Defined in swagger definition))",
-              "message": "string"
-        }
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>201 (Created)</color>
+    else
+        note right of SSAPI #lightgray
+            Log ERROR event
         end note
-        OPERATOR <-- SSAPI: Return ERROR
+        note left of SSAPI #yellow
+            {
+                "status": 0,
+                "code": <integer>,
+                "message": <string>
+            }
+        end note
+        OPERATOR <-- SSAPI: Respond HTTP - <color #FF0000>4xx (Client error)</color>
         deactivate SSAPI
         deactivate OPERATOR
     end
